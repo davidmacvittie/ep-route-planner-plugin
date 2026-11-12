@@ -1,0 +1,19 @@
+{
+  "name": "ep-route-planner",
+  "version": "1.0.0",
+  "description": "Builds route advances for executive protection drive teams: primary and alternate routes with strip maps, predictable spots, hospital runs, rally points, events check and a hand-off to the site advance.",
+  "author": {
+    "name": "David MacVittie"
+  },
+  "homepage": "https://github.com/davidmacvittie/ep-route-planner",
+  "repository": "https://github.com/davidmacvittie/ep-route-planner-plugin",
+  "license": "MIT",
+  "keywords": [
+    "executive-protection",
+    "close-protection",
+    "route-planning",
+    "advance-planning",
+    "security-driving"
+  ],
+  "icon": "assets/icon.png"
+}
