@@ -1,6 +1,6 @@
 ---
 name: ep-route-planner
-description: Builds a route advance for a 1-3 person protection drive team from a list of addresses and a date and time - primary and alternate routes with strip maps, predictable spots with an "if blocked, go" for each, hospital runs turn by turn, a rally point per stop, a citywide events check, green/amber/red verdicts, an overhead view of each stop with its entrances, drop-off and pick-up points, timing, comms and a hand-off to the site advance person. Use when someone gives addresses for a client move and asks for a route advance, route card, drive plan, or advance package for the drive team.
+description: Builds a route advance for a 1-3 person protection drive team from a list of addresses and a date and time - primary and alternate routes with strip maps, predictable spots with an "if blocked, go" for each, hospital runs turn by turn, a rally point per stop, a citywide events check, green or amber verdicts (red is left to the team), an overhead view of each stop with its drop-off, backup and rally points on the leg map page, labeled QR codes (each route loaded into Google Maps, plus a pin and a Street View for each place), timing, and a one-page checklist for recon, day-of and comms. Use when someone gives addresses for a client move and asks for a route advance, route card, drive plan, or advance package for the drive team. Works best with the Mapbox, TomTom and AccuWeather connectors.
 ---
 
 # EP route advance (drive team packet)
@@ -9,9 +9,19 @@ You plan the drive team's part of a protective move: getting the principal from 
 
 The team is small (1-3 people, often with the agent driving). The work is medium threat, inside the US, for executives or well-known people. Keep it to what that team would actually use.
 
-The team may run one car, or have a lead or follow car. The plan is the same either way: same routes, spots, stops, hospital run, comms and verdicts. Don't say the team has no extra car. If the user says there is a lead or follow car, add only three things: its role at each stop (for example, holding the backup point), its place in the checkpoint calls, and a copy of the driver card for its driver.
+The team may run one car, or have a lead or follow car. The plan is the same either way: same routes, spots, stops, hospital run, comms and verdicts. Don't say the team has no extra car. If the user says there is a lead or follow car, add only three things: its role at each stop (for example, holding the backup point), its place in the checkpoint calls, and its place on the checklist's comms lines.
 
-You use only Claude's own tools: web search, web fetch, and a mapping connector if one is connected (Mapbox first, TomTom second). Never ask for or use anything on the user's computer.
+You use only Claude's own tools: web search, web fetch, and the connectors below. Never ask for or use anything on the user's computer.
+
+## 0. Check the connectors first
+
+Before anything else, look at your own tool list for the three recommended connectors:
+
+- **Mapbox:** maps (trip map, leg maps, stop overheads), routes, turn-by-turn steps, drive times and address checks.
+- **TomTom:** live traffic, closures and roadworks, and alternate routes on short city legs.
+- **AccuWeather:** the forecast for the day of the move.
+
+If all three are there, say nothing about them and go on. If any is missing, tell the user in one short message which ones, what each adds and what the packet loses without it (Mapbox: map pages show an empty box and routes and times become estimates; TomTom: closures come only from city DOT or 511 sites and some short legs may have no alternate; AccuWeather: weather comes from web search or the normal for the date). Suggest connecting them in Claude's connector settings, then ask whether to wait or build now without them. Build only once they connect or say to go ahead, and list the missing ones under "How sure are we".
 
 ## 1. Inputs
 
@@ -22,16 +32,19 @@ Start: <address or place>
 Stops: <address or place>, <time> (one line each, in order)
 End: <address or place>
 Date: <date>
+Departure time: <time>
 ```
 
 Then ask once, in one short message, only for what you can't assume. Use these defaults and list them under Assumptions:
 
 | Optional input | Default if not given |
 |---|---|
+| Principal code name | ATLAS (never the real name) |
+| Number of cars | 1, agent driving. If the user names a lead or follow car, add it as above. |
+| Routes per leg | 2: primary and alternate. If the user asks for 3, add a second alternate (section 3). |
+| Greeter at the event site | None (the agent walks the principal in) |
 | Time at each stop | 1 hour per stop |
-| Riders and vehicles | Principal plus 1 agent, one SUV, agent driving. If the user names a lead or follow car, add it as above. |
-| Risk | Medium |
-| Code name | ATLAS (never the real name) |
+| Risk level | Medium. Shown on the cover for reviewers only; nothing in the plan changes with it. |
 | Avoid | None |
 | Who receives the packet | People on the move only |
 
@@ -53,7 +66,7 @@ Search for what else is happening in the city during the move window, plus 15 mi
 - Other big crowds: festivals, parades, tree lightings, big-name visits, road races.
 - School zones, only if the move runs during school hours.
 
-Put the result on the trip map page as a short table: what, where, effect on us. Say "Nothing found" for each kind you checked and found nothing. Give the date you checked and say to check again the day before and 30 minutes before each move.
+Under the trip map, show only the two or three events that touch a route or a stop, as short lines (`events.key`): the event in bold, then its effect on us. Put an event that touches one leg in that route's strip notes too. Keep the full list in `events.rows`. Say "Nothing found" for each kind you checked and found nothing. Give the date you checked and say to check again the day before and 30 minutes before each move.
 
 ## 3. Routes for each leg
 
@@ -61,10 +74,11 @@ For each leg, at the real departure time:
 
 - **Primary:** the fastest reasonable route on main roads with exits.
 - **Alternate:** the option that shares the least road with the primary. Ask the mapping tool for alternatives; if one tool gives none, try the other. Say how much road the two share.
+- **Alternate 2 (only when the user asks for 3 routes):** a third route that shares as little road as possible with both the primary and the alternate. Ask both tools for alternatives; if neither gives a third, route through a waypoint on a different avenue or street. Say how much road it shares with the other two.
 - **Single approach:** if every option uses the same final approach to a stop, say so plainly and suggest a manual option for the recon drive to test.
 - Give distance, drive time from each tool you used, and drive time with buffer (10% low, 15% medium, 20% high risk).
-- Draw one map per leg: primary in blue, alternate in amber, predictable spots as numbered red pins, and the trauma center if it fits.
-- Get turn-by-turn steps for both routes from the mapping tool (Mapbox Directions with steps on, full geometry). These feed the strip maps in section 3a.
+- Draw one map per leg: primary in blue, alternate in amber, alternate 2 (if asked for) in teal #178A86 (with 3 routes, always draw a fresh map that shows all three lines and set `map_routes` to 3; draw the teal line before the blue one so the primary stays on top where they share road), predictable spots as numbered red pins, and the trauma center if it fits.
+- Get turn-by-turn steps for every route from the mapping tool (Mapbox Directions with steps on, full geometry). These feed the strip maps in section 3a.
 
 ## 3a. Linear strip map and step table (every route, every leg)
 
@@ -98,7 +112,7 @@ Without a mapping connector, build the step table from a Google Maps directions 
 
 For each leg list places the car could be stopped or boxed in with no easy way out: bridges, tunnels, ramps, one-way or narrow streets, rail crossings (with train times if any), protected zones (government buildings, embassies) where police close roads with little notice, construction, crowds at venues, and the last 200 m into every stop.
 
-Read current closures and roadworks from the traffic connector or the city's DOT or 511 site. Give the source and the time you read it, and say that it must be read again on the day.
+Read current closures and roadworks from the traffic connector or the city's DOT or 511 site. Give the source and the time you read it, and say that it must be read again on the day. Check every route's own streets against that list, the primary above all: map services can disagree (in the LA test, Mapbox routed the primary through a block TomTom listed as closed). When they do, keep the route only if no better one exists, flag the block on the strip notes with its "if blocked, go", add it to the recon checklist, and make the leg AMBER.
 
 ## 4a. Predictable spots and "if blocked, go"
 
@@ -106,7 +120,7 @@ A predictable spot is a place the car must pass or stop at, where anyone watchin
 
 - Number them per leg (1, 2, 3) in driving order. Usually 2 or 3 per leg; don't mark every choke point.
 - Show each one as a numbered red pin on the leg map, a red circle on the strip map, a red "Spot n." in the step table, and a note in the strip notes.
-- On the leg page, list them first in one table with the other choke points: where, why it matters, **if blocked, go**. Highlight the spot rows in pale red.
+- The leg map page shows no tables. Everything about spots and choke points goes in the strip notes of the route that passes them: every numbered spot, every other choke point worth naming, and any closure on that route, each with its **if blocked, go**. Check each strip's notes before building.
 - Every spot gets one concrete "if blocked, go": a named backup curb, the alternate route, a manual approach to test on recon, or "hold at the venue, then walk to the rally point".
 
 ## 5. Medical, hospital runs and safe havens
@@ -121,21 +135,14 @@ A predictable spot is a place the car must pass or stop at, where anyone watchin
 
 Never name a place from memory. If hours can't be confirmed, say so.
 
-## 6. Each stop: overhead view and hand-off
+## 6. Each stop: overhead view and points
 
-For each stop, pull an overhead satellite view (Mapbox satellite-streets, zoom about 17) with lettered pins: the building, the car's stopping point, the backup point if it fits, and **R** for the rally point. Check each pin lands on the right building before you use the picture. Then fill in:
+For each stop, pull an overhead satellite view (Mapbox satellite-streets, zoom about 17) with lettered pins: the building, the car's stopping point (D), the backup point (B) if it fits, and the rally point (R). Check each pin lands on the right building before you use the picture. Stops get no page of their own: each overhead sits on the map page of the leg that drops off there (the start, on a round trip, sits on the last leg's page).
 
-- **Building overview:** what it is and how it sits on the street, in two or three lines.
-- **Entrances and exits:** every door or gate you can see or find listed, marked "seen on overhead view", "listed by the venue" or "recon to confirm".
-- **Drop-off point:** the exact curb or garage, and the walk to the door.
-- **Pick-up point:** where the car meets the principal on the way out, if different.
-- **Car hold:** where the car waits, and how fast it can get back.
-- **Backup point:** where the car meets the principal if the primary curb is blocked.
-- **Rally point:** a public lobby within a short walk (a large hotel is best) where the team meets if separated or comms go down. Name and address, walking distance, and "lobby hours: recon". It can be the same place as the backup point.
-- **Verdict:** green, amber or red with one line of why (see 7b).
-- **Hand-off to the site advance:** who takes over at the door (role, not name), the phone or radio check-in, and what the drive team needs back from them: a 10-minute departure call, any change of exit door, and crowd or press outside.
+Under the overhead, one short line only (`points`): D, B and R in a few words each, and who meets the car at D and when ("Site advance meets the car at D at 6:35 PM"), or "No greeter: the agent walks the principal in".
 
-Mark anything you couldn't see as "recon to confirm". Don't plan inside the building.
+- **Rally point:** a public lobby within a short walk (a large hotel is best) where the team meets if separated or comms go down. It can be the same place as the backup point.
+- Anything you couldn't see (other doors, curb rules, car hold, lobby hours) goes on the checklist page as a recon line, not on the leg page. Don't plan inside the building.
 
 ## 7. Timing, light and weather
 
@@ -160,38 +167,38 @@ Make it something a driver can read at a glance. Prefer a picture, an icon or a 
 
 Give every leg and every stop one verdict, and the move an overall one:
 
-- **GREEN:** go as planned.
-- **AMBER:** go, with the notes on that page (a crowd, a single approach, a closure nearby, a tight closing time).
-- **RED:** change the plan before the move (a closure on both routes, a stop you can't reach, an event that swamps the curb).
+- **GREEN:** go as planned. Nothing public found that should change the plan.
+- **AMBER:** go, with the notes on that page. Something public could slow or crowd the team: an event, a closure nearby, a single approach, a tight closing time, heavy traffic or weather.
 
-Show them as pills on the cover timeline, with no key there: page 1 explains the colors. Repeat the verdict with its reason on the leg page and the stop page. The overall verdict is the worst one, with the reasons in one line.
+Base verdicts on public data, never on how many turns a route has. **Never give RED.** Red is the team's call after their own advance drive; the packet is a quick outline of key information and the team decides. If something looks bad enough for red (a closure on both routes, a stop you can't reach), give AMBER and say plainly what you found. The builder changes any RED to AMBER and warns.
+
+Show them as pills on the cover timeline, with no key there: page 1 explains the colors. Repeat the verdict with its reason on the leg map page (one line under the title). Stop verdicts show on the cover timeline. The overall verdict is the worst one, with the reasons in one line.
 
 ## 8. Comms
 
 - Suggest ordinary code words that won't alarm the principal: switch to alternate, go to safe haven, medical, and cancel stop.
 - **If comms go down:** no answer at a checkpoint call, call once more, then text. No contact for 5 minutes, the car goes to that stop's rally point and the principal and agent walk there. Phones down, meet at the rally point, wait 15 minutes, then return to the start. List the rally points under the rule.
 - Say the packet goes only to people on the move, by an end-to-end encrypted app.
+- On the checklist page these become short tick lines (`recon.comms_checks`): code words agreed, comms-down rule briefed, the site advance's 10-minute call before each pick-up, packet sent only to people on the move.
 
 ## 9. Output
 
 Produce the packet in this fixed order. If you can run code, build the PDF with the bundled builder (section 10); otherwise use the same headings in text. Leave a section in with "None found" rather than dropping it.
 
-1. **How to read this plan (page 1, before the cover):** written for someone who has never seen this format. Keep it to one page and plain words.
-   - One line on how the plan runs: the whole trip, then each leg, then each stop, then what to do when something goes wrong. Say which pages to read before recon (pages 1 to 3) and which page is for the car (the driver card).
-   - **What's on each page:** a table of page numbers, what each one is and what's on it, using this packet's real page numbers (count the legs, strip map pages and stops). Give each leg's page range so a reader can see its map and strip maps sit together.
-   - **Verdicts:** green = go as planned; amber = go, with the notes on that page; red = change the plan before the move. Every leg, every stop and the whole move get one, and the worst one sets the overall verdict.
-   - **Symbols:** blue line primary, amber line alternate, red number predictable spot, CP1 to CP3 checkpoints (rolling, call in, 2 min out), numbered circle a stop on the timeline, and the icons for trauma center, police, fire, secure venue, watch-out and event. The letters on stop photos: D where the car stops, B backup point, R rally point. List only symbols the packet uses.
-   - **Strip maps:** a small worked example of the line. Drive left to right; above the line is a left turn, below the line is a right turn, a tick is a straight-on event (tunnel, merge), numbers on the line are miles between turns, not to scale.
-   - **Key terms**, one line each: leg, primary and alternate, predictable spot, choke point, if blocked go, backup point, rally point, safe haven, comms-down rule (with this packet's times), recon to confirm, and the hand-off (drive team owns the route and the curb; site advance owns everything past the door).
-2. **Cover:** move name, date, code name, team, vehicle, risk, overall verdict, badge timeline with verdicts, weather card, watch-outs. No color key on the cover; page 1 has it.
-3. **Trip map and events check:** all legs on one map and the citywide events table.
-4. **One page per leg:** map with red spots, primary and alternate in one line each, distance and times, predictable spots and choke points with "if blocked, go", closures, leg verdict. Each leg's map page is followed straight away by its **strip map and step table pages** (primary, then alternate), so the map view and the linear view of the same leg sit together: leg 1 map, leg 1 strips, then leg 2 map, leg 2 strips. Label the map page with the pages of its strips ("Linear view on pages 5 and 6"), and each strip page with its map page ("Linear view of the leg 1 map on page 4").
-5. **One page per stop:** overhead view, building overview, entrances and exits, drop-off, pick-up, car hold, backup point, rally point, verdict, hand-off.
-6. **Medical and safe havens:** trauma centers with level and drive times from each stop, police, fire, secure venues, and the hospital runs turn by turn.
-7. **Recon, day-of checks and comms:** recon checklist in driving order (everything marked "recon to confirm", every red spot's fallback, every rally point lobby, the ER door), day-of checks (day before, 30 minutes before each move), code words, the comms-down rule, and **Confidence** (what was verified, where and when; what is estimated; what was not checked).
-8. **Driver card:** the timeline, each leg's primary and alternate in one line, drop-off, backup and rally point per stop, the hospital with times from each stop, code words and the comms-down rule, and the red spots in one line per leg.
-9. **Recon log (blank form):** driven by, date and time, then a table per route and per hospital run with planned minutes and miles filled in and blank driven minutes, driven miles and notes; a table for the red spots, rally points and ER door; and a day-before re-check list with tick boxes.
-10. **After-move note (blank form):** what went to plan, what changed, red spots that were blocked and what we did, times driven vs planned, what to fix in the next packet, places to add or drop. Fill in within 24 hours; it starts the next advance.
+1. **How to read this plan (page 1, before the cover):** one page, plain words, in five separate areas with clear space between them. One line above them: the packet is a quick outline of public information; it does not replace the advance drive, and the checklist's page number.
+   - **Information needed to build this plan:** required: locations (start, stops in order, end), date, departure time. Optional with defaults: principal code name, number of cars, greeter at the event site, time at each stop, risk level (Medium; for reviewers only).
+   - **Symbols:** blue line primary, amber line alternate (teal for a second alternate), red number predictable spot, CP1 to CP3 checkpoint calls, numbered circle a stop, and the icons for trauma center, police, fire, secure lobby, watch-out and event. D, B and R on stop photos.
+   - **Key terms**, one short line each: leg, primary and alternate, predictable spot, choke point, if blocked go, backup point, rally point, safe haven, recon to confirm, hand-off.
+   - **How to read a strip map:** a small worked example. Left to right; above the line is a left turn, below is a right turn, a tick is a straight-on event, numbers are miles between turns, not to scale.
+   - **Verdicts:** green = go as planned; amber = go, with the notes; red = the team's call only, after the advance drive. The plan never sets red. The worst verdict sets the overall one.
+2. **Cover:** two separate areas. **General info** at the top: code name, date, departure time, cars, greeter, risk level, and the stops in order. Below it, **Time and verdicts**: the overall verdict with its reason in one line, then the timeline with as little on it as possible. Each stop row is its time, its name and one key fact ("Carnegie Hall: 8 PM concert starts"). Each drive row is only the drive time ("3 min, 8 with buffer"). Road names and other notes go on the leg and strip pages, not the cover. Beside it, **Weather and watch-outs**: the weather card with two short lines, and up to four watch-outs of one line each. No color key on the cover; page 1 has it.
+3. **Trip map:** all legs on one map, the place codes, and the two or three events that touch the route. The place codes are two QR codes for each place (start, each stop, the end if different): **Location** drops a pin on the place (not directions), and **Street View** opens Street View at the curb where the car stops. Every per-place code is here and nowhere else.
+4. **One page per leg, kept visual:** the leg verdict and its reason in one line, the map with red spots and its legend, one line with each route's distance and drive time, then the drop-off stop's overhead view with its one-line D, B, R and greeter, and a short note saying where the codes are (place codes on page 3, route codes on the strip pages). No QR codes on this page. No route descriptions and no tables: the strip pages carry the turns, spots, closures and "if blocked, go". Each leg's map page is followed straight away by its **strip map and step table pages** (primary, then alternate, then alternate 2 if asked for), so the map view and the linear view of the same leg sit together: leg 1 map, leg 1 strips, then leg 2 map, leg 2 strips. Label the map page with the pages of its strips ("Turn by turn on pages 5 and 6"), and each strip page with its map page ("Linear view of the leg 1 map on page 4").
+5. **QR codes, one job each, none repeated:** each strip page carries one **route code** top right, labeled "Route: primary, opens in Google Maps". It opens Google Maps directions from the leg's start to its drop-off through up to 3 points on that route (a phone browser takes no more), so the phone follows our route rather than its own fastest one. The builder picks the points: about 50 m past the turns where the route parts from the leg's other routes. Google Maps may still reroute in traffic, and page 1 says so. Never add another code that repeats a route or a place.
+6. **Medical and safe havens:** in page 1 style numbered panels with space between them: 1, trauma centers with level and drive times from each stop, police, fire and secure venues; 2, the hospital runs turn by turn, each run in its own box; 3, what is not in this packet.
+7. **Checklist before the move:** one page of tick-box lines, no paragraphs or tables, in page 1 style numbered panels with space between them (1 recon drive, 2 day before and day of, 3 comms, 4 how sure are we). Recon drive in driving order (each stop's curb, doors and lobby hours, every red spot's fallback, the ER door), day before and day of, comms (code words, comms-down rule, the 10-minute call, who gets the packet), then **How sure are we** in three short lines (verified, estimated, not checked).
+8. **Recon log (blank form):** driven by, date and time, then a table per route and per hospital run with planned minutes and miles filled in and blank driven minutes, driven miles and notes; a table for the red spots, rally points and ER door; and a day-before re-check list with tick boxes.
+9. **After-move note (blank form):** what went to plan, what changed, red spots that were blocked and what we did, times driven vs planned, what to fix in the next packet, places to add or drop. Fill in within 24 hours; it starts the next advance.
 
 End every packet with: "Draft plan. Confirm by recon and current conditions before use."
 
@@ -202,14 +209,16 @@ This skill ships a builder that makes the packet in the fixed layout above: `scr
 1. **Gather the data** with the steps above (mapping, traffic, weather and web search). Nothing here needs the user's computer.
 2. **Write one JSON file** for the trip, following `reference/schema.md`. Start from `examples/dc-atlas.json`, the public sample (a made-up trip in Washington DC), and replace every value. Keep the HTML-style tags the example uses (`<b>`, `<br/>`) and nothing else.
    - Strip maps: for each route put the full route geometry in `line` as [lon, lat] pairs, the tool's total in `meters` and `minutes`, and one event per turn or straight-on event with its point in `pt` ([lon, lat] of the step's maneuver), `side` L, R, S or empty, and a short `label`, `sub` and `text`. Mark checkpoints with `cp` and red spots with `red`. The builder measures miles along the line itself.
-   - If the routing tool gives turn text but no turn coordinates (Mapbox Directions often does), read the turn points from the geometry: `from strip import turns; turns(line)` returns each turn's point and side (L or R), in order. Match them one for one to the tool's turn list; if the counts differ, look at the map before you go on.
+   - If the routing tool gives turn text but no turn coordinates (Mapbox Directions often does), read the turn points from the geometry: `from strip import turns; turns(line)` returns each turn's point and side (L or R), in order. Match them one for one to the tool's turn list; if the counts differ, look at the map before you go on. On freeway and long legs the geometry finds bends that are not turns (ramps, curving roads, driveways) and misses keep-left, keep-right and exit moves. There, pick the turns you need with `turns(line, 25)` by index, and place exits, interchanges and straight-on points at the nearest point on the line to the tool's location for them (side "" for straight-on, "L" or "R" for a keep or an exit).
    - Images: one trip map, one map per leg and one overhead view per stop. Save each to an `img/` folder next to the JSON and give the path, like `img/leg1-map.png`. Get them from the mapping connector; if the code environment can reach the map service, it may fetch the same static images with the public token the connector lists. If an image can't be saved, leave the path in: the builder draws a box that says the image is not available, and you show the map in the chat instead.
    - Lookup tips from test runs: if a hotel or venue name search returns the wrong place, search its street address instead. Check that each stop's routing point sits on the frontage you will use (a big venue's point can land on a stage door or a side street); if not, pick a point on the right street. Give departure times as local time with no offset (`2026-11-12T18:30`). On short city legs Mapbox may return no alternate; ask TomTom for alternatives with geometry, read its turns with `turns(line)`, and name unnamed streets with a reverse geocode.
    - Static map images from the mapping connector arrive as files; copy each into `img/` under the name the JSON uses.
 3. **Run it:** `python3 scripts/build_packet.py trip.json route-advance.pdf`. It needs Python 3 with `reportlab` and `pillow` (`pip install reportlab pillow` if missing).
 4. **Check the output.** The builder prints the page count and warns if a page ran over (the page numbers on page 1 would then be wrong). Shorten the text on the page that overflowed and build again. Look at each page before you hand the PDF over.
 
-Page numbers are worked out from the number of legs and stops: page 1 how to read, 2 cover, 3 trip map, then 3 pages per leg (map, primary strip, alternate strip), one page per stop, medical, recon and comms, driver card, recon log and after-move note. The DC sample is 20 pages: 3 legs and 3 stops.
+**Check the route codes.** The builder prints each route code ("ROUTE CODE leg 2 Alternate: ..."). For each route, run the Mapbox directions tool through the same origin, points and destination and compare its turns with the strip page. Where it takes a different road, set that route's `waypoints` in the JSON by hand ([lon, lat] points, at most 3, each just past a turn it skipped, on the new street), and build again. In the LA and New York tests, 5 of 7 routes matched on the first try and the other 2 skipped a one-block jog. **Aim every Street View code.** For each leg, geocode the venue it drops off at (its building or main entrance, not the routing point) and give the leg `dropoff_view: {"look_at": [lon, lat]}`. The builder then puts the Street View point on the primary route's own line, so on the road beside the drop-off, set back along the last straight stretch (40% of it, 12 to 30 m) so it sits mid-block and not in the intersection the route ends at, and aims the heading from that point at the building. Without `look_at` it looks square at the curb the arrive line names, which can point at the wrong side of a corner. Decode the trip map page's Street View codes and check each point is on the drop-off street and the heading faces the building. `pt` and `heading` in `dropoff_view` override either part by hand.
+
+Page numbers are worked out from the number of legs and stops: page 1 how to read, 2 cover, 3 trip map, then 1 page per leg map plus 1 strip page per route (3 pages per leg with 2 routes, 4 with 3), medical, checklist, recon log and after-move note. The DC sample is 16 pages: 3 legs with 2 routes each.
 
 If code can't run, write the same sections in text in the same order, and give the maps in the chat.
 

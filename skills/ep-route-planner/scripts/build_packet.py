@@ -18,7 +18,7 @@ for n in ["Regular", "Medium", "SemiBold", "Bold", "ExtraBold", "Italic"]:
 from reportlab.lib.fonts import addMapping
 for _n in ["Inter-Regular", "Inter-Medium", "Inter-SemiBold"]:
     addMapping(_n, 0, 0, _n); addMapping(_n, 1, 0, "Inter-Bold"); addMapping(_n, 0, 1, "Inter-Italic"); addMapping(_n, 1, 1, "Inter-Bold")
-from visuals import Icon, Badge, Verdict, Spot, WeatherCard, StripPage, draw_icon, draw_spot, LBLUE, LGREEN
+from visuals import draw_qr, TEAL, Icon, Badge, Verdict, Spot, WeatherCard, StripPage, draw_icon, draw_spot, LBLUE, LGREEN
 from strip import build as place_events
 from reportlab.platypus import Flowable
 from reportlab.lib.pagesizes import letter, landscape
@@ -53,6 +53,42 @@ def P(t, s=B): return Paragraph(t, s)
 def bullets(items, s=BUL): return [Paragraph(i, s, bulletText="•") for i in items]
 def vtext(level, why): return '<font color="%s"><b>%s</b></font>: %s' % (VCOL[level], level, why)
 def color(name): return NAMED.get(name, None) or colors.HexColor(name)
+
+
+PAD = 9; GAP = 11
+
+def panel(title, flow, width, bg=None):
+    """A titled area with its own background, so each part of a page reads as one block."""
+    head = Paragraph(title, ParagraphStyle("pt", fontName="Inter-Bold", fontSize=11, leading=13.5, textColor=NAVY, spaceAfter=5))
+    t = Table([[[head] + list(flow)]], colWidths=[width])
+    t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), bg or PALE), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                           ("LEFTPADDING", (0, 0), (-1, -1), PAD), ("RIGHTPADDING", (0, 0), (-1, -1), PAD),
+                           ("TOPPADDING", (0, 0), (-1, -1), PAD - 2), ("BOTTOMPADDING", (0, 0), (-1, -1), PAD),
+                           ("ROUNDEDCORNERS", [6, 6, 6, 6])]))
+    return t
+
+def cols(cells, width, gap=18, split=None):
+    """Two side-by-side columns with a clear gap between them."""
+    a = split if split else (width - gap) / 2
+    t = Table([[cells[0], "", cells[1]]], colWidths=[a, gap, width - a - gap])
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                           ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    return t
+
+def no_red(D):
+    """The skill gives green or amber only. Red is the team's call after the advance drive."""
+    found = []
+    def fix(x, path):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k in ("verdict", "level") and v == "RED": x[k] = "AMBER"; found.append(path + "." + k)
+                elif k == "verdict" and isinstance(v, list) and v and v[0] == "RED": v[0] = "AMBER"; found.append(path + "." + k)
+                else: fix(v, path + "." + k)
+        elif isinstance(x, list):
+            for i, v in enumerate(x): fix(v, "%s[%d]" % (path, i))
+    fix(D, "")
+    if found:
+        print("WARNING: RED verdicts changed to AMBER (red is the team's call after the advance drive): " + ", ".join(found))
 
 
 def pages_text(a, b):
@@ -164,10 +200,202 @@ class MiniStrip(Flowable):
             c.drawCentredString((a + b) / 2, ly + 4, t)
 
 
+def leg_routes(lg):
+    """(label, key) for each route of a leg: primary and alternate, plus alternate 2 when the plan asks for 3 routes."""
+    r = [("Primary", "primary"), ("Alternate", "alternate")]
+    if lg.get("strip", {}).get("alternate2"): r.append(("Alternate 2", "alternate2"))
+    return r
+
+
+def maps_url(lon, lat):
+    """Directions to one point. Not used on the packet since v1.1.2 (route codes cover each trip); kept for other builders."""
+    return "https://www.google.com/maps/dir/?api=1&destination=%.6f,%.6f" % (lat, lon)
+
+
+# ---- QR code links (v1.1.2). Each code does one job and none repeats:
+#   route code (strip page)      the whole route in Google Maps, through up to 3 points on it
+#   location code (trip map)     a pin on one place, not directions
+#   Street View code (leg map)   the drop-off curb
+def _ll(p): return "%.5f,%.5f" % (p[1], p[0])
+
+def pin_url(lon, lat):
+    return "https://www.google.com/maps/search/?api=1&query=%.5f,%.5f" % (lat, lon)
+
+def _m(a, b):
+    import math
+    R = 6371000.0; la1, la2 = math.radians(a[1]), math.radians(b[1]); dl = math.radians(b[0] - a[0])
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dl / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(min(1.0, h)))
+
+def _bearing(a, b):
+    import math
+    la1, la2 = math.radians(a[1]), math.radians(b[1]); dl = math.radians(b[0] - a[0])
+    y = math.sin(dl) * math.cos(la2); x = math.cos(la1) * math.sin(la2) - math.sin(la1) * math.cos(la2) * math.cos(dl)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+def _samples(line, step=40.0):
+    """Points every step metres along the line, with their distance from the start (mid-block, not on corners)."""
+    out, acc = [], 0.0
+    for a, b in zip(line, line[1:]):
+        d = _m(a, b)
+        if d <= 0: continue
+        t = (step - acc % step) if acc % step else step / 2
+        while t < d:
+            f = t / d; out.append(((a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f), acc + t)); t += step
+        acc += d
+    return out, acc
+
+def _point_at(line, dist):
+    acc = 0.0
+    for a, b in zip(line, line[1:]):
+        d = _m(a, b)
+        if d > 0 and acc + d >= dist:
+            f = (dist - acc) / d; return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+        acc += d
+    return tuple(line[-1])
+
+def route_waypoints(route, others, k=3):
+    """Up to k points that pin the phone to this route (Google Maps opens up to 3 waypoints on a phone browser).
+    Each point sits about 50 m past one of the route's turns, on the new street or ramp, so the app has to make that turn.
+    When a route has more turns than that, the code keeps the turns where it parts from the leg's other routes, spread out.
+    With no turns listed, points are spread along the route instead."""
+    from strip import along
+    line = route["line"]; _, total = _samples(line, 1000)
+    cands, last = [], 0.0
+    for e in route.get("events", [])[1:-1]:
+        if e.get("side") not in ("L", "R") or not e.get("pt"): continue
+        pos, _ = along(line, e["pt"], last); last = pos
+        d = min(pos + 50, total - 60)
+        if d > 60 and all(abs(d - q) > 80 for _, q in cands): cands.append((_point_at(line, d), d))
+    if not cands:
+        pts = [(p, d) for p, d in _samples(line)[0] if 0.1 * total < d < 0.92 * total]
+        cands = [min(pts, key=lambda x: abs(x[1] - f * total)) for f in (0.25, 0.5, 0.75)] if pts else []
+        cands = [c for n_, c in enumerate(cands) if c not in cands[:n_]]
+    if len(cands) > k:
+        # keep the turns where this route parts from the leg's other routes, spread out along the way
+        def gap(p): return min(min(_m(p, q) for q in o) for o in others if o) if others else 0
+        ranked = sorted(cands, key=lambda x: (-round(gap(x[0]) / 40), x[1]))
+        pick = []
+        for c in ranked:
+            if len(pick) < k and all(abs(c[1] - q[1]) > 0.12 * total for q in pick): pick.append(c)
+        for c in ranked:
+            if len(pick) < k and c not in pick: pick.append(c)
+        cands = pick
+    return [p for p, d in sorted(cands, key=lambda x: x[1])]
+
+def route_url(line, wps):
+    u = "https://www.google.com/maps/dir/?api=1&origin=%s&destination=%s&travelmode=driving" % (_ll(line[0]), _ll(line[-1]))
+    if wps: u += "&waypoints=" + "%7C".join(_ll(p) for p in wps)
+    return u
+
+def pano_url(lon, lat, heading):
+    return "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=%.5f,%.5f&heading=%d&pitch=0" % (lat, lon, round(heading) % 360)
+
+def _last_straight(line, tol=25.0):
+    """Length of the route's final straight stretch: walk back from the end while the street keeps its direction."""
+    n = len(line); j = n - 2
+    while j > 0 and _m(line[j], line[-1]) < 12: j -= 1
+    b0 = _bearing(line[j], line[-1]); dist = _m(line[j], line[-1]); i = j
+    while i > 0:
+        d = _m(line[i - 1], line[i])
+        if d > 0:
+            db = abs((_bearing(line[i - 1], line[i]) - b0 + 180) % 360 - 180)
+            if db > tol: break
+            dist += d
+        i -= 1
+    return dist, b0
+
+def _back_along(line, back):
+    """The point `back` metres before the end of the line, measured along it (so it stays on the road)."""
+    acc = 0.0
+    for k in range(len(line) - 1, 0, -1):
+        a, b = line[k - 1], line[k]; d = _m(a, b)
+        if d > 0 and acc + d >= back:
+            f = (back - acc) / d; return (b[0] + (a[0] - b[0]) * f, b[1] + (a[1] - b[1]) * f)
+        acc += d
+    return tuple(line[0])
+
+def dropoff_view(lg, line, last_text=""):
+    """Street View point and heading for a leg's drop-off (v1.1.3).
+    Point: on the primary route's own line, so on the road beside the drop-off, set back along the final straight
+    stretch (40% of it, 12 to 30 m) so it sits mid-block rather than in the intersection the route ends at.
+    Heading: from that point toward dropoff_view.look_at (the venue's building or entrance, from a geocode).
+    With no look_at, it looks square at the curb the arrive line names (right unless it says left).
+    dropoff_view.pt and dropoff_view.heading override either part by hand."""
+    dv = lg.get("dropoff_view") or {}
+    L, b = _last_straight(line)
+    pt = dv.get("pt") or _back_along(line, max(12.0, min(30.0, 0.4 * L)))
+    if "heading" in dv: return pt, dv["heading"]
+    if dv.get("look_at"): return pt, _bearing(pt, dv["look_at"])
+    left = "on the left" in last_text.lower() or "left curb" in last_text.lower()
+    return pt, b + (-90 if left else 90)
+
+
+class MiniQR(Flowable):
+    """A small QR mark for the symbols panel."""
+    def __init__(self, size=12): Flowable.__init__(self); self.size = size
+    def wrap(self, aw, ah): return self.size, self.size
+    def draw(self): draw_qr(self.canv, "QR", 0, 0, self.size)
+
+
+class QRBox(Flowable):
+    """A QR code with a label under it. The code is also a tap link in the PDF."""
+    def __init__(self, url, label, sub="", size=78, width=None):
+        Flowable.__init__(self); self.url, self.label, self.sub, self.size = url, label, sub, size
+        self.w = width or size + 40; self.h = size + 30
+    def wrap(self, aw, ah): return self.w, self.h
+    def draw(self):
+        c = self.canv; s = self.size; x0 = (self.w - s) / 2; y0 = 26
+        draw_qr(c, self.url, x0, y0, s)
+        c.setFillColor(NAVY); c.setFont("Inter-Bold", 8.5)
+        lab = self.label
+        while pdfmetrics.stringWidth(lab, "Inter-Bold", 8.5) > self.w and len(lab) > 4: lab = lab[:-2]
+        c.drawCentredString(self.w / 2, 14, lab)
+        if self.sub:
+            c.setFillColor(SLATE); c.setFont("Inter-Regular", 7.2); c.drawCentredString(self.w / 2, 4, self.sub)
+
+
+def qr_row(items, width, size=78):
+    """items: (url, label, sub). One row of QR boxes spread across the width."""
+    n = max(1, len(items)); cw = width / n
+    t = Table([[QRBox(u, l, sb, size, cw - 6) for u, l, sb in items]], colWidths=[cw] * n)
+    t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                           ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))
+    return t
+
+
+def leg_ends(lg):
+    """Short names of a leg's start and end: start_name / end_name if given, else the title split on ' to '."""
+    parts = lg["title"].split(" to ")
+    a = lg.get("start_name") or (parts[0] if len(parts) == 2 else "Start")
+    b = lg.get("end_name") or (parts[1] if len(parts) == 2 else "Drop-off")
+    return a[:1].upper() + a[1:], b[:1].upper() + b[1:]
+
+
+def stop_name(sd):
+    return sd.get("short_name") or sd["title"].split(",")[0]
+
+
+def stops_for_legs(legs, stops):
+    """Which stop overheads go on each leg map page: the leg's drop-off stop (leg n ends at stops[n mod count] on a
+    round trip, or a leg's own `stop` index). A start that no leg ends at goes on leg 1 beside its drop-off."""
+    out, used = [], set()
+    for n, lg in enumerate(legs, start=1):
+        i = lg.get("stop", n % len(stops) if len(stops) == len(legs) else min(n, len(stops) - 1))
+        out.append([(stops[i], "Drop-off")]); used.add(i)
+    if 0 not in used and stops:
+        out[0].insert(0, (stops[0], "Start"))
+    return out
+
+
 def build(D, out_path):
+    no_red(D)
     meta = D["meta"]; legs = D["legs"]; stops = D["stops"]
     nL, nS = len(legs), len(stops)
-    p_stop0 = 4 + 3 * nL; p_med = p_stop0 + nS; p_recon = p_med + 1; p_driver = p_recon + 1; p_form = p_driver + 1
+    leg_map_p, p = [], 4
+    for lg in legs: leg_map_p.append(p); p += 1 + len(leg_routes(lg))
+    leg_stops = stops_for_legs(legs, stops)
+    p_med = p; p_recon = p_med + 1; p_form = p_recon + 1
 
     def on_page(c, doc):
         c.saveState()
@@ -195,156 +423,249 @@ def build(D, out_path):
     S = []
 
     # ---------- 1. HOW TO READ THIS PLAN ----------
-    HT = ParagraphStyle("ht", parent=BS, fontSize=7.7, leading=9.8)
+    HT = ParagraphStyle("ht", parent=BS, fontSize=8, leading=10.4)
     HTB = ParagraphStyle("htb", parent=HT, fontName="Inter-SemiBold")
-    HH2 = ParagraphStyle("hh2", parent=H2, fontSize=10.5, leading=13, spaceBefore=4, spaceAfter=2)
+    PH = ParagraphStyle("ph", parent=H2, fontSize=11, leading=13.5, spaceBefore=0, spaceAfter=5)
+    IW = W - 2 * PAD          # inner width of a full-width panel
     S += [P("START HERE", KICK), P("How to read this plan", H1),
-          P("The plan follows the move in order: the whole trip first, then each leg, then each stop, then what to do when something goes wrong. "
-            "Read pages 1 to 3 before the recon drive. In the car, the driver card on page %d is the one page you need." % p_driver, BS), Spacer(1, 2)]
-    leg_ranges = ", ".join("leg %d is %s" % (i + 1, ("pages " if i == 0 else "") + pages_text(4 + 3 * i, 6 + 3 * i)) for i in range(nL))
-    leg_ranges = leg_ranges[0].upper() + leg_ranges[1:]
-    pages = [
-        ("1", "How to read this plan", "This page."),
-        ("2", "Cover", "The move at a glance: stops, times, the verdict for each leg and stop, weather and watch-outs."),
-        ("3", "Trip map and events check", "All legs on one map, and anything in town that could block or crowd us."),
-        (pages_text(4, 3 + 3 * nL), "Leg 1" if nL == 1 else "Legs 1 to %d" % nL,
-         "Each leg's map view, then the linear view of the same leg: primary and alternate strip maps. %s." % leg_ranges),
-        (pages_text(p_stop0, p_med - 1), "Stops", "One page per place: overhead view, curb, door, backup point, where the car waits, rally point, hand-off."),
-        (str(p_med), "Medical", "Trauma center and help nearby, with the hospital run turn by turn from each stop."),
-        (str(p_recon), "Recon, day-of checks, comms", "What to confirm on the recon drive, checks on the day, code words and the comms-down rule."),
-        (str(p_driver), "Driver card", "The whole plan on one page for the car."),
-        (pages_text(p_form, p_form + 1), "Blank forms", "Recon log (planned vs driven) and the after-move note."),
-    ]
-    S.append(table(["Page", "What it is", "What's on it"], [["<b>%s</b>" % a, "<b>%s</b>" % b, c] for a, b, c in pages], [0.1, 0.25, 0.65], style=HT,
-                   extra=[("TOPPADDING", (0, 1), (-1, -1), 2), ("BOTTOMPADDING", (0, 1), (-1, -1), 2)]))
+          P("A quick outline of the public information a small drive team needs for this move. It does not replace the advance drive: "
+            "the team drives the routes, checks them and decides. Work through the checklist on page %d before the move." % p_recon, BS),
+          Spacer(1, GAP)]
 
-    def vrow(level, meaning, act):
-        return [Verdict(level, 46, 13), P("<b>%s</b>" % meaning, HT), P(act, HT)]
-    vt = Table([vrow("GREEN", "Go as planned", "Nothing to change. Drive the primary."),
-                vrow("AMBER", "Go, with the notes", "Read the notes on that page. Usually a backup point, timing or a recon item."),
-                vrow("RED", "Change the plan", "Do not drive it as written. Fix it, or move the time or the stop.")],
-               colWidths=[54, 92, None])
-    vt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 2), ("TOPPADDING", (0, 0), (-1, -1), 2.5),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5), ("LINEBELOW", (0, 0), (-1, -2), 0.4, LINE)]))
-    vleft = [P("Verdicts: green, amber, red", HH2), vt,
-             P("Every leg, every stop and the whole move get one. The worst leg or stop sets the overall verdict.", SM)]
+    # 1. Information needed
+    inp_req = [("Locations", "Start, each stop in order, and the end."),
+               ("Date", "The day of the move."),
+               ("Departure time", "When the principal leaves the start.")]
+    inp_opt = [("Principal code name", "ATLAS (never the real name)."),
+               ("Number of cars", "1."),
+               ("Routes per leg", "2. Or 3, adding a second alternate."),
+               ("Greeter at the event site", "None."),
+               ("Time at each stop", "1 hour."),
+               ("Risk level", "Medium. For reviewers only.")]
+    def kvt(rows, w, kw=0.36):
+        t = Table([[P("<b>%s</b>" % a, HTB), P(b, HT)] for a, b in rows], colWidths=[w * kw, w * (1 - kw)])
+        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 1.6),
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 1.6), ("LINEBELOW", (0, 0), (-1, -2), 0.3, LINE)]))
+        return t
+    hw = (IW - 18) / 2
+    req = [P("Required", HTB), Spacer(1, 2), kvt(inp_req, hw, 0.34)]
+    opt = [P("Optional, with the default if left blank", HTB), Spacer(1, 2), kvt(inp_opt, hw, 0.42)]
+    S += [panel("1.  Information needed to build this plan", [cols([req, opt], IW)], W), Spacer(1, GAP)]
 
+    # 2. Symbols
     def sym(draw, label, desc): return [draw, P("<b>%s</b> %s" % (label, desc), HT)]
     def line_sw(col):
         t = Table([[""]], colWidths=[16], rowHeights=[4]); t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), col)])); return t
     syms = [
         sym(line_sw(BLUE), "Blue line:", "primary route."),
-        sym(line_sw(AMBER), "Amber line:", "alternate route."),
-        sym(Spot("1", 11), "Red number:", "predictable spot. Read its <b>if blocked, go</b> line."),
-        sym(Icon("cp", 12), "CP1, CP2, CP3:", "checkpoints. Call each one in: rolling, call in, 2 min out."),
-        sym(Badge("2", AMBER, 12), "Numbered circle:", "a stop on the timeline."),
+        sym(line_sw(AMBER), "Amber line:", "alternate route (teal: second alternate)."),
+        sym(Spot("1", 11), "Red number:", "predictable spot."),
+        sym(Icon("cp", 12), "CP1 to CP3:", "checkpoint calls."),
+        sym(Badge("2", AMBER, 12), "Numbered circle:", "a stop."),
         sym(Icon("hospital", 11), "Red cross:", "trauma center."),
-        sym(Icon("police", 11), "Blue shield:", "police station."),
+        sym(Icon("police", 11), "Blue shield:", "police."),
         sym(Icon("fire", 11), "Orange flame:", "fire station."),
-        sym(Icon("secure", 11), "Green house:", "secure venue to wait in, like a hotel lobby."),
-        sym(Icon("warn", 11), "Amber triangle:", "watch-out: closures, roadworks, security zones."),
-        sym(Icon("event", 11), "Purple ticket:", "event that could crowd the route."),
+        sym(Icon("secure", 11), "Green house:", "secure lobby."),
+        sym(Icon("warn", 11), "Amber triangle:", "watch-out."),
+        sym(Icon("event", 11), "Purple ticket:", "event or crowd."),
+        [Badge("D", NAVY, 12), P("On stop photos: <b>D</b> car stops, <b>B</b> backup, <b>R</b> rally.", HT)],
     ]
-    symt = Table(syms, colWidths=[20, None])
-    symt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 1), ("TOPPADDING", (0, 0), (-1, -1), 1.2), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2)]))
-    vleft += [P("Symbols", HH2), symt,
-              P("On the stop photos: <b>D</b> = where the car stops, <b>B</b> = backup point, <b>R</b> = rally point.", SM)]
+    ncol = 3; cw = IW / ncol
+    grid = []
+    for r in range((len(syms) + ncol - 1) // ncol):
+        row = []
+        for c in range(ncol):
+            k = c * ((len(syms) + ncol - 1) // ncol) + r
+            if k < len(syms):
+                t = Table([syms[k]], colWidths=[22, cw - 30])
+                t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
+                row.append(t)
+            else:
+                row.append("")
+        grid.append(row)
+    symt = Table(grid, colWidths=[cw] * ncol)
+    symt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    S += [panel("2.  Symbols", [symt], W), Spacer(1, GAP)]
+
+    # 3. Key terms
     terms = D.get("terms") or [
         ("Leg", "One drive from one place to the next."),
-        ("Primary / alternate", "The planned route, and a second one that shares as little road with it as possible."),
-        ("Predictable spot", "A place we must pass or stop at a known time, like a curb or a tunnel. Where an attack is easiest to plan."),
-        ("Choke point", "A place with no way out, like a tunnel, ramp or one-way block."),
-        ("If blocked, go", "Where to go when a spot is blocked. Decide it now, not in the car."),
+        ("Primary / alternate", "The planned route, and a second one on different roads."),
+        ("Predictable spot", "A place we must pass at a known time, like a curb."),
+        ("Choke point", "No way out, like a tunnel or one-way block."),
+        ("If blocked, go", "Where to go if a spot is blocked. Decided now."),
         ("Backup point", "A second curb if the planned one is blocked."),
-        ("Rally point", "Where everyone meets if separated or comms go down."),
-        ("Safe haven", "Somewhere close to get the principal inside: police, fire, hospital or a staffed lobby."),
-        ("Comms-down rule", "What to do with no contact: 5 min, go to the rally point; phones down, wait 15 min, then return to the hotel."),
-        ("Recon to confirm", "Could not be seen on a map. Check it on the recon drive."),
-        ("Hand-off", "The drive team owns the route and the curb. The site advance owns everything past the door."),
+        ("Rally point", "Where everyone meets if separated or comms fail."),
+        ("Safe haven", "Police, fire, hospital or a staffed lobby nearby."),
+        ("Recon to confirm", "Not visible on a map. Check it on the drive."),
+        ("Hand-off", "Drive team owns route and curb; site advance owns past the door."),
     ]
-    tt = Table([[P("<b>%s</b>" % a, HTB), P(b, HT)] for a, b in terms], colWidths=[78, None])
-    tt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 2), ("TOPPADDING", (0, 0), (-1, -1), 1.8),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8), ("LINEBELOW", (0, 0), (-1, -2), 0.3, LINE)]))
-    RW = W * 0.5 - 8
-    vright = [P("Strip maps: how to read the line", HH2), MiniStrip(RW),
+    half = (len(terms) + 1) // 2
+    S += [panel("3.  Key terms", [cols([[kvt(terms[:half], hw, 0.32)], [kvt(terms[half:], hw, 0.32)]], IW)], W), Spacer(1, GAP)]
+
+    # 4. Strip map and 5. Verdicts, side by side
+    PW2 = (W - GAP) / 2; IW2 = PW2 - 2 * PAD
+    strip_p = panel("4.  How to read a strip map", [MiniStrip(IW2),
               P("Drive left to right. <font color='#1F5FBF'><b>Above the line = left turn.</b></font> <font color='#2E8540'><b>Below the line = right turn.</b></font> "
-                "A tick on the line is a straight-on event like a tunnel or merge. Numbers on the line are miles between turns. Not to scale.", HT),
-              P("Key terms", HH2), tt]
-    two = Table([[vleft, vright]], colWidths=[W * 0.5, W * 0.5])
-    two.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 14)]))
-    S += [two, PageBreak()]
+                "A tick on the line is a straight-on event like a tunnel or merge. Numbers on the line are miles between turns. Not to scale. "
+                "<b>QR codes</b> say what they open. Each strip page's route code opens that route in Google Maps; the app may reroute in traffic.", HT)], PW2)
+    def vrow(level, txt):
+        return [Verdict(level, 46, 13), P(txt, HT)]
+    vt = Table([vrow("GREEN", "<b>Go as planned.</b> Nothing public found that should change the plan."),
+                vrow("AMBER", "<b>Go, with the notes.</b> Something public could slow or crowd you: an event, a closure, one way in, a tight closing time, weather."),
+                vrow("RED", "<b>The team's call only.</b> After the advance drive, the team marks a leg or stop red if it should not be driven as written. This plan never sets red.")],
+               colWidths=[54, IW2 - 54])
+    vt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 3),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 3), ("LINEBELOW", (0, 0), (-1, -2), 0.4, LINE)]))
+    verd_p = panel("5.  Verdicts", [vt, Spacer(1, 3), P("Every leg and stop gets green or amber with its reason, from public data. The worst one sets the overall verdict.", SM)], PW2)
+    S += [cols([[strip_p], [verd_p]], W, gap=GAP), PageBreak()]
 
     # ---------- 2. COVER ----------
-    cv = D["cover"]
-    S += [P("DRIVE TEAM PACKET", KICK), P(cv["title"], H1), P(cv["intro"], SM), Spacer(1, 6)]
-    S.append(kv([tuple(r) for r in cv["facts"]] + [("Overall", vtext(cv["overall"]["level"], cv["overall"]["why"]))]))
-    TLS = ParagraphStyle("tl", parent=B, fontSize=8.4, leading=10.8)
-    TLD = ParagraphStyle("tld", parent=SM, fontSize=7.3, leading=9.2)
-    tl_rows, tst = [], [("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]
+    cv = D["cover"]; inp = D.get("inputs")
+    S += [P("DRIVE TEAM PACKET", KICK), P(cv["title"], H1)]
+    if cv.get("intro"): S.append(P(cv["intro"], SM))
+    S.append(Spacer(1, GAP))
+    if inp:
+        risk = inp.get("risk") or "Medium (default)"
+        facts = [("Principal", "%s (code name)" % inp.get("code_name", meta["code_name"])),
+                 ("Date", inp.get("date", meta["date_label"])),
+                 ("Departs", inp.get("start_time", "")),
+                 ("Cars", str(inp.get("cars") or "1 (default)")),
+                 ("Routes per leg", str(inp.get("routes") or "2 (default)")),
+                 ("Greeter at the event site", inp.get("greeter") or "None given"),
+                 ("Risk level", "%s. For reviewers; the plan is the same at any level." % risk)]
+        gw = (IW - 18) / 2
+        half = (len(facts) + 1) // 2
+        top = cols([[kvt(facts[:half], gw, 0.34)], [kvt(facts[half:], gw, 0.42)]], IW)
+        stops_t = kvt([(a, b) for a, b in inp.get("stops", [])], IW, 0.14)
+        S += [panel("General info", [top, Spacer(1, 6), stops_t], W), Spacer(1, GAP)]
+    else:
+        S += [panel("General info", [kv([tuple(r) for r in cv["facts"]])], W), Spacer(1, GAP)]
+
+    LPW = W * 0.56; RPW = W - LPW - GAP; LIW = LPW - 2 * PAD; RIW = RPW - 2 * PAD
+    TLS = ParagraphStyle("tl", parent=B, fontSize=8.6, leading=11)
+    TLD = ParagraphStyle("tld", parent=SM, fontSize=8, leading=10)
+    ov = cv["overall"]
+    ovt = Table([[Verdict(ov["level"], 52, 15), P("<b>Overall.</b> " + ov["why"], TLS)]], colWidths=[60, LIW - 60])
+    ovt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+    tl_rows, tst = [], [("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]
     for i, r in enumerate(cv["timeline"]):
         stop = r.get("kind", "stop") == "stop"
-        mark = Badge(r.get("badge", ""), color(r.get("badge_color", "navy"))) if stop else Icon("car", 14)
         v = r.get("verdict", "")
-        tl_rows.append([mark, P(r["time"], TLS if stop else TLD), P(r["text"], TLS if stop else TLD), Verdict(v, 40, 12) if v else ""])
-        if stop: tst.append(("BACKGROUND", (1, i), (-1, i), PALE))
-    tlt = Table(tl_rows, colWidths=[22, 80, None, 44]); tlt.setStyle(TableStyle(tst))
-    WO = ParagraphStyle("wo", parent=BS, fontSize=7.9, leading=10.2)
+        if stop:
+            bc = r.get("badge_color") or {"GREEN": "green", "AMBER": "amber"}.get(v, "navy")
+            tl_rows.append([Badge(r.get("badge", ""), color(bc)), P(r.get("time", ""), TLS), P(r["text"], TLS), Verdict(v, 42, 12) if v else ""])
+            tst.append(("BACKGROUND", (1, i), (-1, i), PALE))
+        else:
+            tl_rows.append([Icon("car", 13), P(r["text"], TLD), "", Verdict(v, 42, 12) if v else ""])
+            tst.append(("SPAN", (1, i), (2, i)))
+    tlt = Table(tl_rows, colWidths=[24, 62, LIW - 24 - 62 - 48, 48]); tlt.setStyle(TableStyle(tst))
+    left_p = panel("Time and verdicts", [ovt, Spacer(1, 8), tlt, Spacer(1, 5), P(cv.get("drive_times_note", ""), SM)], LPW)
+    WO = ParagraphStyle("wo", parent=BS, fontSize=8, leading=10.4)
     watch = [icon_row(w["icon"], w["text"], WO) for w in cv["watch_outs"]]
-    leftcol = [P("Timeline and verdicts", H2), tlt, Spacer(1, 4), P(cv.get("drive_times_note", ""), SM)]
-    rightcol = [P("Weather and light", H2), WeatherCard(W * 0.45, D["weather"]), Spacer(1, 4), P("Watch-outs", H2)] + watch
-    cov = Table([[leftcol, rightcol]], colWidths=[W * 0.53, W * 0.47])
-    cov.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 10)]))
-    S += [cov, PageBreak()]
+    right_p = panel("Weather and watch-outs", [WeatherCard(RIW, D["weather"]), Spacer(1, 8)] + watch, RPW)
+    S += [cols([[left_p], [right_p]], W, gap=GAP, split=LPW), PageBreak()]
 
     # ---------- 3. TRIP MAP + EVENTS ----------
     tm = D["trip_map"]; ev = D["events"]
-    S += [P("TRIP MAP AND EVENTS CHECK", KICK), P(tm["title"], H1)]
-    S += img(tm.get("image"), W * 0.92)
-    S += [Spacer(1, 3), legend([(color(c), l) for c, l in tm["legend"]]), P(tm.get("caption", ""), SM)]
-    S += [P(ev["title"], H2), P(ev.get("note", ""), SM)]
-    EV = ParagraphStyle("ev", parent=BS, fontSize=7.9, leading=10.1)
-    S += [table(["What", "Where", "Effect on us"], ev["rows"], [0.29, 0.31, 0.4], style=EV), PageBreak()]
+    S += [P("TRIP MAP", KICK), P(tm["title"], H1)]
+    S += img(tm.get("image"), W * 0.86)
+    S += [Spacer(1, 3), legend([(color(c), l) for c, l in tm["legend"]]), P(tm.get("caption", ""), SM), Spacer(1, 6)]
+    pts = []   # start, then the end of each leg; skip an end that comes back to a place already listed
+    for i, lg in enumerate(legs):
+        line = lg["strip"]["primary"]["line"]; a_, b_ = leg_ends(lg)
+        if i == 0: pts.append((a_, line[0]))
+        if not any(abs(line[-1][0] - q[1][0]) < 0.0015 and abs(line[-1][1] - q[1][1]) < 0.0015 for q in pts):
+            pts.append((b_, line[-1]))
+    subs = ["Start" + (" and end" if len(pts) == nL else "")] + ["Stop %d" % k for k in range(1, len(pts))]
+    if len(pts) == nL + 1: subs[-1] = "End"
+    # v1.1.2: every per-place code sits here, once: a location pin and a Street View of the curb for each place.
+    # The curb is where the car stops: the end of the leg that drops off there, or for the start, the pick-up point.
+    views = []
+    for nm, pt in pts:
+        lg_in = next((lg for lg in legs if _m(lg["strip"]["primary"]["line"][-1], pt) < 160), None)
+        if lg_in:
+            ln = lg_in["strip"]["primary"]["line"]; ev_last = (lg_in["strip"]["primary"].get("events") or [{}])[-1]
+            views.append(dropoff_view(lg_in, ln, ev_last.get("text", "")))
+        else:
+            ln = legs[0]["strip"]["primary"]["line"]; j = 1
+            while j < len(ln) - 1 and _m(ln[0], ln[j]) < 25: j += 1
+            views.append((ln[0], _bearing(ln[0], ln[j]) + 90))
+    ncode = 2 * len(pts); cw = W / ncode; qs = min(66, cw - 16)
+    head = []; codes = []
+    for (nm, pt), sb, (vpt, vhd) in zip(pts, subs, views):
+        head += [P("<b>%s</b> <font color='#5A6577'>(%s)</font>" % (nm, sb.lower()), ParagraphStyle("qh", parent=BS, fontSize=8.6, leading=10.5, alignment=1)), ""]
+        codes += [QRBox(pin_url(*pt), "Location", "pin, not directions", qs, cw - 4),
+                  QRBox(pano_url(vpt[0], vpt[1], vhd), "Street View", "the curb", qs, cw - 4)]
+    qt = Table([head, codes], colWidths=[cw] * ncode)
+    qst = [("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+           ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2), ("TOPPADDING", (0, 0), (-1, -1), 1)]
+    for k in range(len(pts)):
+        qst.append(("SPAN", (2 * k, 0), (2 * k + 1, 0)))
+        if k: qst.append(("LINEBEFORE", (2 * k, 0), (2 * k, 1), 0.5, LINE))
+    qt.setStyle(TableStyle(qst))
+    S += [P("Place codes: a pin and a Street View for each place", H2), qt,
+          P("Each route's code, which loads the whole route into Google Maps, is on its strip page.", SM)]
+    key = ev.get("key") or ["<b>%s</b>: %s" % (r[0].replace("<b>", "").replace("</b>", ""), r[2]) for r in ev["rows"][:3]]
+    S += [P("Events that touch the route", H2)] + [icon_row("event", k) for k in key[:3]]
+    S += [Spacer(1, 3), P(ev.get("note", ""), SM), PageBreak()]
 
-    # ---------- LEGS: map page, then primary and alternate strips ----------
-    LEG_LEGEND = legend([(BLUE, "Primary"), (AMBER, "Alternate"), ("spot", "Predictable spot (numbered)"), (NAVY, "Cross = trauma center")])
-    bb = ParagraphStyle("bb", parent=BUL, fontSize=8, leading=10.5)
+    # ---------- LEGS: map page (visual), then one strip page per route ----------
+    VR = ParagraphStyle("vr", parent=BS, fontSize=9, leading=11.5)
+    HTB2 = ParagraphStyle("htb2", parent=BS, fontName="Inter-SemiBold", fontSize=9, leading=11.5, textColor=NAVY, spaceAfter=2)
     for n, lg in enumerate(legs, start=1):
-        S += [P("LEG %d  |  DEPART %s  |  MAP VIEW, LINEAR VIEW ON PAGES %d AND %d" % (n, lg["depart"], 2 + 3 * n, 3 + 3 * n), KICK), P(lg["title"], H1)]
-        S += img(lg.get("map_image"), W * 0.62)
-        S += [Spacer(1, 2), LEG_LEGEND, Spacer(1, 4)]
-        pr, al = lg["primary"], lg["alternate"]
-        S.append(table(["", "Route", "Distance", "Drive time"], [["<b>Primary</b>"] + list(pr), ["<b>Alternate</b>"] + list(al)], [0.12, 0.6, 0.11, 0.17]))
-        S += [Spacer(1, 3), P(lg.get("shared", ""), SM)]
-        rows, extra = [], []
-        for i, (num, where, why, go) in enumerate(lg["spots"], start=1):
-            rows.append([Spot(num, 11) if num else "", "<b>%s</b>" % where if num else where, why, go])
-            if num: extra.append(("BACKGROUND", (0, i), (-1, i), REDPALE))
-        S += [P("Predictable spots and choke points", H2),
-              table(["", "Where", "Why it matters", "If blocked, go"], rows, [0.05, 0.25, 0.33, 0.37], zebra=False, extra=extra)]
-        left = [P("Closures and roadworks", H2), P(lg.get("closures_source", ""), SM)] + bullets(lg["closures"], bb)
-        right = [P("Leg verdict", H2), Verdict(lg["verdict"][0], 56, 15), Spacer(1, 4), P(lg["verdict"][1], BS)]
-        two = Table([[left, right]], colWidths=[W * 0.62, W * 0.38])
-        two.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 12)]))
-        S.append(two)
+        routes = leg_routes(lg); mp = leg_map_p[n - 1]
+        if len(routes) == 3 and int(lg.get("map_routes", 2)) < 3:
+            print("WARNING: leg %d has a second alternate but its map image does not show it. Draw a fresh leg map "
+                  "with all three routes (alternate 2 in teal #178A86) and set map_routes to 3." % n, file=sys.stderr)
+        strip_pages = list(range(mp + 1, mp + 1 + len(routes)))
+        pg = " AND ".join(", ".join(str(x) for x in strip_pages).rsplit(", ", 1))
+        S += [P("LEG %d  |  DEPART %s  |  TURN BY TURN ON PAGES %s" % (n, lg["depart"], pg), KICK), P(lg["title"], H1)]
+        vt = Table([[Verdict(lg["verdict"][0], 56, 15), P(lg["verdict"][1], VR)]], colWidths=[66, W - 66])
+        vt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+        S += [vt, Spacer(1, 6)]
+        S += img(lg.get("map_image"), W * 0.74)
+        lg_items = [(BLUE, "Primary"), (AMBER, "Alternate")] + ([(TEAL, "Alternate 2")] if len(routes) == 3 else []) + \
+                   [("spot", "Predictable spot"), (NAVY, "Trauma center")]
+        S += [Spacer(1, 2), legend(lg_items), Spacer(1, 3)]
+        times = []
+        for label, key in routes:
+            r = lg.get(key)
+            if r: times.append("<b>%s</b> %s, %s" % (label, r[1], r[2]))
+        S += [P(".&nbsp;&nbsp; ".join(times) + ".", VR), Spacer(1, 6)]
+        # bottom row: overhead view of the stop(s) on this leg. No codes here since v1.1.2: place codes are on the
+        # trip map page and each route's code is on its strip page, so no code appears twice.
+        shown = leg_stops[n - 1]
+        iw = W * 0.62 if len(shown) == 1 else W / len(shown) - 14
+        cells = []
+        for sd, role in shown:
+            cells.append([P("<b>%s:</b> %s" % (role, stop_name(sd)), HTB2)] + img(sd.get("image"), iw) +
+                         [Spacer(1, 2), P(sd.get("points") or sd.get("caption", ""), SM)])
+        side = [P("<b>QR codes</b>", HTB2), P("Pin and Street View for each place: page 3.", SM), Spacer(1, 4),
+                P("Route codes for this leg: pages %s, with the turns, spots, closures and where to go if blocked." % pg.lower(), SM)]
+        if len(shown) == 1:
+            row = Table([cells + [side]], colWidths=[iw + 14, W - iw - 14])
+        else:
+            row = Table([cells], colWidths=[iw + 14] * len(shown))
+        row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
+        S += [row] + ([Spacer(1, 3), P("QR codes: pin and Street View for each place on page 3; route codes for this leg on pages %s." % pg.lower(), SM)] if len(shown) > 1 else [])
         st = lg["strip"]
         S += [NextPageTemplate("l"), PageBreak()]
-        for kind, key in (("Primary", "primary"), ("Alternate", "alternate")):
+        for i, (kind, key) in enumerate(routes):
             route = st[key]
-            sp = StripPage(kind, n, nL, route, place_events(route), _notes(st[key + "_notes"]), STRIP_W, STRIP_H)
-            sp.map_page = 1 + 3 * n
+            sp = StripPage(kind, n, nL, route, place_events(route), _notes(st.get(key + "_notes", [])), STRIP_W, STRIP_H)
+            sp.map_page = mp
+            others = [st[k2]["line"] for _, k2 in routes if k2 != key and st.get(k2)]
+            wps = route["waypoints"] if "waypoints" in route else route_waypoints(route, others)
+            sp.route_qr = route_url(route["line"], wps)
+            sp.route_qr_via = "%d point%s on it" % (len(wps), "" if len(wps) == 1 else "s") if wps else "no extra points"
+            print("ROUTE CODE leg %d %s: %s" % (n, kind, sp.route_qr))
             S.append(sp)
-            S.append(PageBreak() if kind == "Primary" else NextPageTemplate("p"))
+            S.append(PageBreak() if i < len(routes) - 1 else NextPageTemplate("p"))
         S.append(PageBreak())
 
-    # ---------- STOPS ----------
-    hb = ParagraphStyle("hb", parent=BUL, fontSize=8.5, leading=11)
-    for sd in stops:
-        S += [P(sd["kicker"], KICK), P(sd["title"], H1)]
-        S += img(sd.get("image"), W * 0.6, sd.get("caption"))
-        S += [Spacer(1, 4), P("<b>Building overview.</b> " + sd["overview"], B), Spacer(1, 4)]
-        S.append(table(["Item", "Detail", "Source"], sd["rows"] + [["Verdict", vtext(*sd["verdict"]), "Plan"]], [0.18, 0.6, 0.22]))
-        if sd.get("flag"): S += [Spacer(1, 6), note(sd["flag"])]
-        S += [P("Hand-off to the site advance", H2)] + bullets(sd["handoff"], hb) + [PageBreak()]
+    # (stops have no pages of their own: each overhead sits on the map page of the leg that drops off there)
 
     # ---------- MEDICAL ----------
     md = D["medical"]
@@ -353,43 +674,66 @@ def build(D, out_path):
         k = {"Police": "police", "Fire": "fire", "Secure venue": "secure"}.get(t, "hospital" if "Trauma" in t else None)
         return icon_row(k, t, ParagraphStyle("mti", parent=BS, fontSize=8, leading=10), 9) if k else t
     ns = len(md["from"]); cw = 0.3 / ns
-    S.append(table(["Place", "Type"] + ["From " + f for f in md["from"]] + ["Check"], [[r[0], _ti(r[1])] + r[2:] for r in md["rows"]],
-                   [0.31, 0.19] + [cw] * ns + [0.2]))
-    S += [Spacer(1, 3), P(md.get("times_note", ""), SM), P(md["runs_title"], H2)]
-    HR = ParagraphStyle("hr", parent=BS, fontSize=7.8, leading=10, leftIndent=9, bulletIndent=0)
-    HH = ParagraphStyle("hh", parent=BS, fontName="Inter-Bold", fontSize=8.4, leading=11, textColor=RED)
-    runs = [[P(r["head"], HH), P(r["sub"], SM), Spacer(1, 2)] + [Paragraph(s, HR, bulletText="%d" % (i + 1)) for i, s in enumerate(r["steps"])] for r in md["runs"]]
-    rt = Table([runs], colWidths=[W / len(runs)] * len(runs))
-    rt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                            ("BACKGROUND", (0, 0), (-1, -1), PALE), ("LINEBEFORE", (1, 0), (-1, 0), 0.6, LINE),
-                            ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-    S += [rt, Spacer(1, 3), P(md.get("runs_note", ""), SM)]
-    if md.get("kit_note"): S += [Spacer(1, 6), note(md["kit_note"], PALE, NAVY)]
+    # v1.1.3: page 1 styling. Each section is a numbered panel, with clear space between them,
+    # and each hospital run sits in its own white box inside the second panel.
+    IWm = W - 2 * PAD; sc = IWm / W
+    WHITE = colors.white
+    ht = table(["Place", "Type"] + ["From " + f for f in md["from"]] + ["Check"], [[r[0], _ti(r[1])] + r[2:] for r in md["rows"]],
+               [x * sc for x in [0.31, 0.19] + [cw] * ns + [0.2]], zebra=False,
+               extra=[("BACKGROUND", (0, 1), (-1, -1), WHITE)])
+    S += [panel("1.  Help nearby: hospitals, police, fire and safe places", [ht, Spacer(1, 4), P(md.get("times_note", ""), SM)], W),
+          Spacer(1, GAP + 7)]
+    HR = ParagraphStyle("hr", parent=BS, fontSize=7.8, leading=10.2, leftIndent=9, bulletIndent=0, spaceBefore=1.5)
+    HH = ParagraphStyle("hh", parent=BS, fontName="Inter-Bold", fontSize=8.6, leading=11, textColor=RED)
+    nrun = len(md["runs"]); rg = 8; rw = (IWm - rg * (nrun - 1)) / nrun
+    def run_box(r):
+        body = [P(r["head"], HH), P(r["sub"], SM), Spacer(1, 3)] + [Paragraph(x, HR, bulletText="%d" % (i + 1)) for i, x in enumerate(r["steps"])]
+        t = Table([[body]], colWidths=[rw])
+        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), WHITE), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                               ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                               ("ROUNDEDCORNERS", [5, 5, 5, 5])]))
+        return t
+    row = []
+    for i, r in enumerate(md["runs"]):
+        if i: row.append("")
+        row.append(run_box(r))
+    rt = Table([row], colWidths=sum(([rg, rw] if i else [rw] for i in range(nrun)), []))
+    rt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    S += [panel("2.  " + md["runs_title"], [rt, Spacer(1, 5), P(md.get("runs_note", ""), SM)], W)]
+    if md.get("kit_note"): S += [Spacer(1, GAP + 7), panel("3.  Not in this packet", [P(md["kit_note"], BS)], W)]
     S.append(PageBreak())
 
-    # ---------- RECON, DAY-OF, COMMS ----------
+    # ---------- CHECKLIST: RECON, DAY-OF, COMMS ----------
     rc = D["recon"]
-    S += [P("RECON, DAY-OF CHECKS AND COMMS", KICK), P("What to check before the move", H1)]
-    S += [P("Recon drive", H2), P(rc["intro"], B), Spacer(1, 4)]
-    S.append(table(["#", "Where", "Confirm"], rc["rows"], [0.05, 0.3, 0.65]))
-    S += [P("Day-of checks", H2)] + bullets(rc["day_of"], ParagraphStyle("dob", parent=BUL, fontSize=8.5, leading=11))
-    comms_l = [P("Code words", H2), table(["Code word", "Means"], rc["code_words"], [0.17, 0.33]), Spacer(1, 3), P(rc.get("code_note", ""), SM)]
-    cdr = ParagraphStyle("cdr", parent=BS, fontSize=8.2, leading=10.8, leftIndent=10, bulletIndent=0)
-    comms_r = [P("If comms go down", H2)] + [Paragraph(t, cdr, bulletText="%d" % (i + 1)) for i, t in enumerate(rc["comms_down"])] + \
-              [Spacer(1, 3), P(rc.get("rally_summary", ""), BS)]
-    ct = Table([[comms_l, comms_r]], colWidths=[W * 0.52, W * 0.48])
-    ct.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 12)]))
-    S += [ct, P("Confidence", H2)] + bullets(rc["confidence"], ParagraphStyle("cb", parent=BUL, fontSize=8.3, leading=10.8)) + [PageBreak()]
-
-    # ---------- DRIVER CARD ----------
-    dc = D["driver_card"]
-    DC = ParagraphStyle("dc", parent=B, fontSize=9.3, leading=12.2)
-    M = ParagraphStyle("m", parent=B, fontSize=9.8, leading=12.8)
-    S += [P("DRIVER CARD", KICK), P(dc["title"], H1)]
-    S.append(table(["Time", "Move", "Primary", "Alternate"], dc["moves"], [0.12, 0.22, 0.36, 0.3], style=DC))
-    S += [P("Drop-off, pick-up and rally points", H2), table(["Stop", "Car stops", "Backup", "Rally point"], dc["points"], [0.16, 0.26, 0.31, 0.27], style=DC)]
-    S += [P("Medical", H2), P(dc["medical"], M), P("Code words and comms down", H2), P(dc["comms"], M), P("Red spots", H2)]
-    S += bullets(dc["red_spots"], ParagraphStyle("w", parent=BUL, fontSize=9.6, leading=12.5)) + [PageBreak()]
+    CK = ParagraphStyle("ck", parent=BS, fontSize=8.8, leading=11.4)
+    IWc = W - 2 * PAD
+    def checks(items, width=IWc):
+        rows = []
+        for t in items:
+            bx = Table([[""]], colWidths=[9], rowHeights=[9]); bx.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.8, INK)]))
+            rows.append([bx, P(t, CK)])
+        t = Table(rows, colWidths=[22, width - 22])
+        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                               ("LEFTPADDING", (0, 0), (0, -1), 7), ("LEFTPADDING", (1, 0), (1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                               ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                               ("TOPPADDING", (0, 0), (-1, 0), 6), ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
+                               ("LINEBELOW", (0, 0), (-1, -2), 0.3, LINE), ("ROUNDEDCORNERS", [5, 5, 5, 5])]))
+        return t
+    # v1.1.4: page 1 styling, as on the medical page. Each section is a numbered panel with clear space between them.
+    S += [P("RECON, DAY-OF AND COMMS", KICK), P("Checklist before the move", H1)]
+    if rc.get("intro_short"): S += [P(rc["intro_short"], SM), Spacer(1, 6)]
+    sp = Spacer(1, GAP + 3)
+    S += [panel("1.  Recon drive", [checks(["<b>%s:</b> %s" % (r[1], r[2]) for r in rc["rows"]])], W), sp]
+    S += [panel("2.  Day before and day of", [checks(rc["day_of"])], W), sp]
+    comms = rc.get("comms_checks") or (
+        ["Code words agreed: " + ". ".join("%s = %s" % (w.replace('"', ""), m[:1].lower() + m[1:]) for w, m in rc["code_words"]) + "."] +
+        ["Comms-down rule briefed: " + " ".join(rc["comms_down"])])
+    S += [panel("3.  Comms", [checks(comms)], W)]
+    if rc.get("confidence"):
+        S += [sp, panel("4.  How sure are we", [P(c, SM) for c in rc["confidence"]], W)]
+    S.append(PageBreak())
 
     # ---------- BLANK FORMS ----------
     def form_table(header, nrows, widths, h=22, prefill=None):
@@ -416,8 +760,9 @@ def build(D, out_path):
     fm = D["forms"]
     S += [P("FORM  |  FILL IN ON THE RECON DRIVE", KICK), P("Recon log: planned vs driven", H1),
           kv([("Driven by", ""), ("Date and time", "Same weekday and time of day as the move, if possible"), ("Vehicle", "")])]
+    nr = max(len(fm["recon_routes"]), 6)   # 3 routes per leg gives more rows: keep the block the height of 10 rows so the form stays on one page
     S += [P("Routes", H2), form_table(["Leg and route", "Planned min", "Driven min", "Planned mi", "Driven mi", "Traffic, closures, notes"],
-                                      max(len(fm["recon_routes"]), 6), [0.22, 0.1, 0.1, 0.1, 0.1, 0.38], 24, fm["recon_routes"])]
+                                      nr, [0.27, 0.1, 0.1, 0.1, 0.1, 0.33], min(24, 240.0 / nr), fm["recon_routes"])]
     S += [P("Red spots and stops", H2), form_table(["Spot or stop", "What we saw", "If blocked option driven?"], max(len(fm["recon_spots"]), 6),
                                                    [0.3, 0.45, 0.25], 26, fm["recon_spots"])]
     S += [P("Day-before re-check", H2), box_list(["Closures and roadworks re-read", "Events check re-run (page 3)", "Forecast read",

@@ -7,8 +7,19 @@ from reportlab.lib.utils import simpleSplit
 NAVY = colors.HexColor("#0F1B2D"); INK = colors.HexColor("#18202B"); SLATE = colors.HexColor("#5A6577")
 LINE = colors.HexColor("#DDE1E7"); AMBER = colors.HexColor("#E3A33B"); GREEN = colors.HexColor("#2F7D57")
 RED = colors.HexColor("#B83A3A"); BLUE = colors.HexColor("#2E5E9E"); PALE = colors.HexColor("#F4F6F9")
-ORANGE = colors.HexColor("#D9772B"); LBLUE = colors.HexColor("#1F5FBF"); LGREEN = colors.HexColor("#2E8540")
+ORANGE = colors.HexColor("#D9772B"); TEAL = colors.HexColor("#178A86"); LBLUE = colors.HexColor("#1F5FBF"); LGREEN = colors.HexColor("#2E8540")
 VERDICT = {"GREEN": GREEN, "AMBER": AMBER, "RED": RED}
+
+
+def draw_qr(c, url, x, y, s):
+    """A QR code for url, s points square, lower-left at x,y; also a tap link in the PDF."""
+    from reportlab.graphics.barcode import qr
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.graphics import renderPDF
+    q = qr.QrCodeWidget(url, barLevel="L"); b = q.getBounds(); bw, bh = b[2] - b[0], b[3] - b[1]
+    d = Drawing(s, s, transform=[s / bw, 0, 0, s / bh, 0, 0]); d.add(q)
+    renderPDF.draw(d, c, x, y)
+    c.linkURL(url, (x, y, x + s, y + s), relative=1)
 
 # ---------------- icons ----------------
 def draw_icon(c, kind, x, y, r):
@@ -127,7 +138,10 @@ class WeatherCard(Flowable):
         for sx, sy in [(cx + 15, cy + 11), (cx + 19, cy - 5)]: c.circle(sx, sy, 1.1, stroke=0, fill=1)
         c.setFillColor(colors.white); c.setFont("Inter-Bold", 28); c.drawString(96, h - 63, self.d.get("high", ""))
         c.setFillColor(colors.HexColor("#8A94A6")); c.setFont("Inter-Regular", 16); c.drawString(96 + c.stringWidth(self.d.get("high", ""), "Inter-Bold", 28) + 6, h - 63, self.d.get("low", ""))
-        c.setFont("Inter-SemiBold", 6.3); c.setFillColor(AMBER); c.drawString(96, h - 74, self.d.get("tag", ""))
+        tag = self.d.get("tag", ""); fs = 6.3
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        while fs > 4.5 and 96 + stringWidth(tag, "Inter-SemiBold", fs) > self.w - 8: fs -= 0.2
+        c.setFont("Inter-SemiBold", fs); c.setFillColor(AMBER); c.drawString(96, h - 74, tag)
         y = h - 92
         draw_icon(c, "sunset", 20, y + 3, 5)
         c.setFillColor(colors.white); c.setFont("Inter-Medium", 8); c.drawString(30, y, "Sunset " + self.d.get("sunset", ""))
@@ -157,27 +171,61 @@ class StripPage(Flowable):
     def wrap(self, aw, ah): return self.w, self.h - 2
     def draw(self):
         c = self.canv; w, h = self.w, self.h - 2
-        accent = BLUE if self.kind == "Primary" else ORANGE
-        c.setFillColor(accent); c.setFont("Inter-ExtraBold", 17)
+        accent = BLUE if self.kind == "Primary" else (TEAL if self.kind == "Alternate 2" else ORANGE)
+        from reportlab.pdfbase.pdfmetrics import stringWidth
         t = "%s Route  |  Leg %d of %d: %s" % (self.kind, self.leg_no, self.legs_total, self.route["title"].split(": ", 1)[1])
-        c.drawString(0, h - 16, t)
+        room = w
         if getattr(self, "map_page", None):  # v5: say which map page this strip is the linear view of
+            mp = "Linear view of the leg %d map on page %d" % (self.leg_no, self.map_page)
             c.setFillColor(SLATE); c.setFont("Inter-SemiBold", 9)
-            c.drawRightString(w, h - 15, "Linear view of the leg %d map on page %d" % (self.leg_no, self.map_page))
+            c.drawRightString(w, h - 15, mp); room = w - stringWidth(mp, "Inter-SemiBold", 9) - 14
+        fs = 17   # long place names: shrink the title so it never runs into the map-page note
+        while fs > 11 and stringWidth(t, "Inter-ExtraBold", fs) > room: fs -= 0.5
+        c.setFillColor(accent); c.setFont("Inter-ExtraBold", fs)
+        c.drawString(0, h - 16, t)
         r = self.route; total = self.ev[-1]["mi"]
-        c.setFillColor(SLATE); c.setFont("Inter-Regular", 8.5)
-        c.drawString(0, h - 30, "Depart %s, arrive %s.  %.1f mi / about %d min (Mapbox, typical traffic for that time).  Not to scale; miles between turns on the line.  %s" %
-                     (r["depart"], r["arrive"], total, r["minutes"], r.get("source", "")))
+        sub = "Depart %s, arrive %s.  %.1f mi / about %d min (Mapbox, typical traffic for that time).  Not to scale; miles between turns on the line.  %s" % (
+            r["depart"], r["arrive"], total, r["minutes"], r.get("source", ""))
+        fs = 8.5; sw = w - (76 if getattr(self, "route_qr", None) else 0)
+        while fs > 6.5 and stringWidth(sub, "Inter-Regular", fs) > sw: fs -= 0.25
+        c.setFillColor(SLATE); c.setFont("Inter-Regular", fs)
+        c.drawString(0, h - 30, sub)
         # legend box
         by = h - 72
-        c.setFillColor(PALE); c.setStrokeColor(LINE); c.roundRect(0, by, w, 32, 5, stroke=1, fill=1)
-        c.setFont("Inter-Bold", 8.5); c.setFillColor(LBLUE); c.drawString(12, by + 19, "ABOVE THE LINE = LEFT TURN")
-        c.setFillColor(LGREEN); c.drawString(12, by + 7, "BELOW THE LINE = RIGHT TURN")
-        draw_icon(c, "cp", 214, by + 16, 9); c.setFillColor(INK); c.setFont("Inter-Regular", 8.5); c.drawString(228, by + 13, "Checkpoint (call it in)")
-        c.setStrokeColor(INK); c.setLineWidth(1.2); c.line(342, by + 16, 354, by + 16); c.line(348, by + 10, 348, by + 22)
-        c.drawString(360, by + 13, "Straight-on event (tunnel, merge)")
-        draw_spot(c, 1, 520, by + 16, 7); c.setFillColor(RED); c.setFont("Inter-Bold", 8.5)
-        c.drawString(532, by + 13, "Predictable spot: if blocked, see notes")
+        qr = getattr(self, "route_qr", None)
+        if not qr:
+            c.setFillColor(PALE); c.setStrokeColor(LINE); c.roundRect(0, by, w, 32, 5, stroke=1, fill=1)
+            c.setFont("Inter-Bold", 8.5); c.setFillColor(LBLUE); c.drawString(12, by + 19, "ABOVE THE LINE = LEFT TURN")
+            c.setFillColor(LGREEN); c.drawString(12, by + 7, "BELOW THE LINE = RIGHT TURN")
+            draw_icon(c, "cp", 214, by + 16, 9); c.setFillColor(INK); c.setFont("Inter-Regular", 8.5); c.drawString(228, by + 13, "Checkpoint (call it in)")
+            c.setStrokeColor(INK); c.setLineWidth(1.2); c.line(342, by + 16, 354, by + 16); c.line(348, by + 10, 348, by + 22)
+            c.drawString(360, by + 13, "Straight-on event (tunnel, merge)")
+            draw_spot(c, 1, 520, by + 16, 7); c.setFillColor(RED); c.setFont("Inter-Bold", 8.5)
+            c.drawString(532, by + 13, "Predictable spot: if blocked, see notes")
+        else:
+            # v1.1.2: the legend packs into three columns so the route QR code fits top right, with its label beside it
+            fs = 8
+            x2 = 12 + stringWidth("BELOW THE LINE = RIGHT TURN", "Inter-Bold", fs) + 16
+            x3 = x2 + 16 + max(stringWidth("Checkpoint (call it in)", "Inter-Regular", fs), stringWidth("Straight-on event (tunnel, merge)", "Inter-Regular", fs)) + 16
+            lb = x3 + 15 + stringWidth("if blocked, see notes", "Inter-Bold", fs) + 12
+            c.setFillColor(PALE); c.setStrokeColor(LINE); c.roundRect(0, by, lb, 32, 5, stroke=1, fill=1)
+            c.setFont("Inter-Bold", fs); c.setFillColor(LBLUE); c.drawString(12, by + 19, "ABOVE THE LINE = LEFT TURN")
+            c.setFillColor(LGREEN); c.drawString(12, by + 7, "BELOW THE LINE = RIGHT TURN")
+            draw_icon(c, "cp", x2 + 5, by + 23.5, 5.8); c.setFillColor(INK); c.setFont("Inter-Regular", fs); c.drawString(x2 + 16, by + 19, "Checkpoint (call it in)")
+            c.setStrokeColor(INK); c.setLineWidth(1.2); c.line(x2, by + 9.5, x2 + 10, by + 9.5); c.line(x2 + 5, by + 5, x2 + 5, by + 14)
+            c.drawString(x2 + 16, by + 7, "Straight-on event (tunnel, merge)")
+            draw_spot(c, 1, x3 + 5, by + 16, 6.5); c.setFillColor(RED); c.setFont("Inter-Bold", fs)
+            c.drawString(x3 + 15, by + 19, "Predictable spot:"); c.drawString(x3 + 15, by + 7, "if blocked, see notes")
+            qs = 66; qx = w - qs
+            draw_qr(c, qr, qx, by + 40 - qs, qs)
+            tx = lb + 14; tw2 = qx - 10 - tx
+            c.setFillColor(accent); c.setFont("Inter-Bold", 8.6); yy = by + 26
+            for ln in simpleSplit("Route: %s, opens in Google Maps" % self.kind.lower(), "Inter-Bold", 8.6, tw2):
+                c.drawRightString(qx - 10, yy, ln); yy -= 10.5
+            c.setFillColor(SLATE); c.setFont("Inter-Regular", 7.2)
+            for ln in simpleSplit("Scan or tap. Follows this route through %s. The app may reroute in traffic." %
+                                  getattr(self, "route_qr_via", "points on it"), "Inter-Regular", 7.2, tw2):
+                c.drawRightString(qx - 10, yy, ln); yy -= 8.8
         # strip
         ly = h - 190
         x0, x1 = 34, w - 40

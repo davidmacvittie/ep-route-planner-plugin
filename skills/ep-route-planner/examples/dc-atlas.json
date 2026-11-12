@@ -1,4 +1,26 @@
 {
+ "inputs": {
+  "code_name": "ATLAS",
+  "date": "Friday, Nov 20, 2026",
+  "start_time": "5:30 PM Eastern",
+  "cars": "1",
+  "greeter": "Yes, the site advance person at The Anthem",
+  "risk": "",
+  "stops": [
+   [
+    "Start / end",
+    "InterContinental The Willard, 1401 Pennsylvania Ave NW"
+   ],
+   [
+    "Stop 1",
+    "The Anthem, 901 Wharf St SW. Private reception 6:00 to 8:00 PM (made up)"
+   ],
+   [
+    "Stop 2",
+    "Fiola Mare, 3050 K St NW (Washington Harbour). Dinner about 8:15 to 10:15 PM"
+   ]
+  ]
+ },
  "meta": {
   "code_name": "ATLAS",
   "date_label": "Fri Nov 20, 2026",
@@ -9,7 +31,7 @@
  },
  "cover": {
   "title": "Route advance: Willard to The Anthem to Fiola Mare and back",
-  "intro": "Made-up trip built to test the route advance skill. Places are real and public; principal, team and event are made up. Map data read Nov 9 and 10, 2026.",
+  "intro": "Made-up trip built to test the skill. Places are real and public; map data read Nov 9 and 10, 2026.",
   "facts": [
    [
     "Principal",
@@ -34,77 +56,72 @@
   ],
   "overall": {
    "level": "AMBER",
-   "why": "go as planned, with two notes: concert crowd at The Anthem pick-up, and one way in and out at Washington Harbour."
+   "why": "Go, with notes: concert crowd at The Anthem pick-up, and one way in and out at Washington Harbour."
   },
   "timeline": [
    {
     "kind": "stop",
-    "badge": "1",
+    "badge": "S",
     "badge_color": "navy",
     "time": "<b>5:30 PM</b>",
-    "text": "<b>Willard: depart</b><br/>Penn Ave frontage. Window 5:25 to 5:35.",
+    "text": "<b>Willard:</b> depart",
     "verdict": "GREEN"
    },
    {
     "kind": "drive",
-    "time": "1.7 mi",
-    "text": "9 to 11 min, 13 with buffer. 15th St, Penn Ave, 9th St tunnel.",
+    "text": "9 to 11 min, 13 with buffer",
     "verdict": "GREEN"
+   },
+   {
+    "kind": "stop",
+    "badge": "1",
+    "time": "<b>5:43 PM</b>",
+    "text": "<b>The Anthem:</b> 8 PM concert at pick-up",
+    "verdict": "AMBER"
+   },
+   {
+    "kind": "drive",
+    "text": "12 to 13 min, 15 with buffer",
+    "verdict": "AMBER"
    },
    {
     "kind": "stop",
     "badge": "2",
-    "badge_color": "amber",
-    "time": "<b>5:43 to 8:00 PM</b>",
-    "text": "<b>The Anthem</b><br/>Reception 6:00 to 8:00. Concert crowd at pick-up.",
+    "time": "<b>8:15 PM</b>",
+    "text": "<b>Fiola Mare:</b> closes 10:30 PM",
     "verdict": "AMBER"
    },
    {
     "kind": "drive",
-    "time": "3.2 mi",
-    "text": "12 to 13 min, 15 with buffer. Independence Ave, Potomac Fwy, K St.",
-    "verdict": "AMBER"
-   },
-   {
-    "kind": "stop",
-    "badge": "3",
-    "badge_color": "red",
-    "time": "<b>8:15 to 10:15 PM</b>",
-    "text": "<b>Fiola Mare</b><br/>Dinner. Closes 10:30 PM. One way in and out.",
-    "verdict": "AMBER"
-   },
-   {
-    "kind": "drive",
-    "time": "2.0 mi",
-    "text": "11 to 12 min, 15 with buffer. K St, 17th St, H St, 14th St.",
+    "text": "11 to 12 min, 15 with buffer",
     "verdict": "GREEN"
    },
    {
     "kind": "stop",
-    "badge": "4",
+    "badge": "E",
     "badge_color": "navy",
     "time": "<b>10:30 PM</b>",
-    "text": "<b>Willard: arrive</b><br/>Agent walks the principal to the room.",
+    "text": "<b>Willard:</b> arrive",
     "verdict": ""
    }
   ],
-  "drive_times_note": "Drive times: Mapbox and TomTom for those departure times, read Nov 9. The higher one sets the buffer.",
+  "drive_times_note": "Drive times: Mapbox and TomTom, read Nov 9. Each leg's map page shows its drop-off; turns and notes are on the strip pages.",
   "watch_outs": [
    {
     "icon": "event",
-    "text": "<b>Concert at The Anthem, show 8:00 PM</b> (JamBase and Songkick, read Nov 10). Crowd builds from about 7 PM and meets our 8:00 PM pick-up. Other venues: see the events check on page 3."
+    "text": "<b>Concert at The Anthem, 8 PM.</b> Crowd at our pick-up."
    },
    {
     "icon": "warn",
-    "text": "<b>Fiola Mare closes 10:30 PM</b> on Fridays (TomTom listing). Our 10:15 PM departure is close to closing."
+    "text": "<b>Fiola Mare closes 10:30 PM.</b> We leave at 10:15."
    },
    {
     "icon": "warn",
-    "text": "<b>One way in and out at Washington Harbour.</b> Both routes use K St under the Whitehurst Fwy."
+    "text": "<b>One way in and out at Washington Harbour.</b> Both routes use K St."
    },
    {
     "icon": "warn",
-    "text": "<b>White House security zone</b> next to the Willard (15th St, 17th and H St). Streets can close with little notice."
+    "text": "<b>White House security zone</b> next to the Willard. Closures with little notice."
    }
   ]
  },
@@ -112,8 +129,8 @@
   "source": "AccuWeather  |  Washington DC (Ellipse)",
   "day": "FRI",
   "date": "11/20",
-  "high": "56°",
-  "low": "40°",
+  "high": "56\u00b0",
+  "low": "40\u00b0",
   "tag": "NORMAL FOR THE DATE, NOT A FORECAST",
   "sunset": "4:51 PM",
   "dark": "5:19 PM",
@@ -121,10 +138,6 @@
    {
     "tone": "note",
     "text": "Rain chance and amount: not out yet. Nov 20 enters the 10-day forecast about Nov 11; recheck then and on the day."
-   },
-   {
-    "tone": "muted",
-    "text": "Record for the date: 79° high (1942), 20° low (1901). Last year: 49° / 42°."
    },
    {
     "tone": "impact",
@@ -630,6 +643,11 @@
       "warn"
      ],
      [
+      "Maine Ave to the Wharf",
+      "Arrive by 5:45 PM, before the concert crowd.",
+      "event"
+     ],
+     [
       "Nearest help",
       "Engine 13 (fire), 4 min. MPD First District, 5 min. George Washington University Hospital (Level I), 12 min.",
       "hospital"
@@ -667,6 +685,12 @@
       "U.S. Park Police District One, about 8 min. George Washington University Hospital (Level I), 12 min.",
       "hospital"
      ]
+    ]
+   },
+   "dropoff_view": {
+    "look_at": [
+     -77.02609387,
+     38.8801228
     ]
    }
   },
@@ -1213,6 +1237,11 @@
       "warn"
      ],
      [
+      "Freeway ramps",
+      "Potomac Fwy and Rock Creek Pkwy: know the exits before you enter; don't stop on the ramp.",
+      "warn"
+     ],
+     [
       "Nearest help",
       "George Washington University Hospital (Level I), 7 min. U.S. Park Police District One, 7 min. Engine 23, 7 min.",
       "hospital"
@@ -1245,6 +1274,12 @@
       "George Washington University Hospital is two blocks north of 23rd and E St.",
       "hospital"
      ]
+    ]
+   },
+   "dropoff_view": {
+    "look_at": [
+     -77.061704,
+     38.903258
     ]
    }
   },
@@ -1696,6 +1731,11 @@
       "warn"
      ],
      [
+      "Washington Circle underpass",
+      "If blocked, alternate south on Rock Creek Pkwy.",
+      "warn"
+     ],
+     [
       "Nearest help",
       "George Washington University Hospital (Level I), 5 min. Engine 23, 5 min. Four Seasons Hotel, 7 min.",
       "hospital"
@@ -1728,6 +1768,12 @@
       "George Washington University Hospital (Level I), 5 min from K St.",
       "hospital"
      ]
+    ]
+   },
+   "dropoff_view": {
+    "look_at": [
+     -77.032377,
+     38.896436
     ]
    }
   }
@@ -1779,7 +1825,8 @@
     "At the hotel there is no separate site person in this sample: the agent walks the principal to the room.",
     "Ask hotel security for the overnight contact and whether F St doors are open late. <b>Recon.</b>"
    ],
-   "flag": null
+   "flag": null,
+   "points": "D: Pennsylvania Ave curb. B: F St NW side. R: hotel lobby. No greeter: the agent walks the principal in."
   },
   {
    "kicker": "STOP 1  |  ARRIVE ABOUT 5:43 PM, DEPART 8:00 PM",
@@ -1829,7 +1876,8 @@
     "Site advance tells the driver about crowds or press outside before the principal walks out.",
     "Driver confirms on arrival which door the principal will leave by."
    ],
-   "flag": "<b>Crowd at 8:00 PM.</b> A public concert is listed at The Anthem that night with an 8:00 PM show time (JamBase and Songkick, read Nov 10). Ask the site advance whether the reception can end 15 minutes earlier, or use the backup point for pick-up."
+   "flag": "<b>Crowd at 8:00 PM.</b> A public concert is listed at The Anthem that night with an 8:00 PM show time (JamBase and Songkick, read Nov 10). Ask the site advance whether the reception can end 15 minutes earlier, or use the backup point for pick-up.",
+   "points": "D: District Sq SW at Water St. B and R: InterContinental The Wharf. Site advance meets the car at D at 5:43 PM."
   },
   {
    "kicker": "STOP 2  |  ARRIVE ABOUT 8:15 PM, DEPART 10:15 PM",
@@ -1878,7 +1926,8 @@
     "Restaurant manager's direct line goes to the site advance, not in this packet.",
     "10-minute call to the driver before the principal leaves the table."
    ],
-   "flag": "<b>Closing time.</b> TomTom lists Friday hours as 11:30 AM to 10:30 PM. Departing 10:15 PM is close to closing. <b>Dead end.</b> Washington Harbour is a waterfront dead end: the only way out by car is back to K St."
+   "flag": "<b>Closing time.</b> TomTom lists Friday hours as 11:30 AM to 10:30 PM. Departing 10:15 PM is close to closing. <b>Dead end.</b> Washington Harbour is a waterfront dead end: the only way out by car is back to K St.",
+   "points": "E: K St NW at 31st St. R: the Ritz-Carlton Georgetown. Site advance confirms the table and the walk from K St."
   }
  ],
  "medical": {
@@ -2088,56 +2137,13 @@
    "<b>Verified (Nov 9 and 10):</b> addresses and stopping points (Mapbox, TomTom); routes, times and hospital turns (Mapbox, TomTom); closures (TomTom); trauma levels (hospital sites); Fiola Mare hours (TomTom); events (venue sites and listings); sunset (calculated).",
    "<b>Estimated:</b> drive times on Nov 20; crowd size; station hours marked \"per listing\".",
    "<b>Not checked:</b> doors, garage entrances, curb rules, ER door and rally point lobby hours (recon); weather (out of range)."
-  ]
- },
- "driver_card": {
-  "title": "ATLAS  |  Fri Nov 20  |  Willard, Anthem, Fiola Mare, Willard",
-  "moves": [
-   [
-    "5:30 PM",
-    "Willard to The Anthem",
-    "15th St, Penn Ave east, 9th St tunnel, Maine Ave",
-    "15th St south, Maine Ave"
-   ],
-   [
-    "8:00 PM",
-    "The Anthem to Fiola Mare",
-    "Independence Ave, Potomac Fwy, Rock Creek Pkwy, K St",
-    "12th St, Constitution Ave, 23rd St, K St"
-   ],
-   [
-    "10:15 PM",
-    "Fiola Mare to Willard",
-    "K St, 17th St, H St, 14th St",
-    "Rock Creek Pkwy, Independence Ave, 14th St"
-   ]
   ],
-  "points": [
-   [
-    "Willard",
-    "Penn Ave frontage (D)",
-    "F St side",
-    "JW Marriott, 1331 Penn Ave NW"
-   ],
-   [
-    "The Anthem",
-    "District Sq SW / Water St",
-    "InterContinental Wharf, 801 Wharf St SW",
-    "Same as backup"
-   ],
-   [
-    "Fiola Mare",
-    "K St NW at 31st St (E)",
-    "Four Seasons, 2800 Penn Ave NW",
-    "Ritz-Carlton, 3100 South St NW"
-   ]
-  ],
-  "medical": "<b>George Washington University Hospital, 900 23rd St NW (Level I).</b> Willard 10 min, Anthem 12 min, Fiola Mare 5 min. Turn lists on the medical page. Call 911 on the way.",
-  "comms": "Scenic = alternate route.  Coffee stop = safe haven.  Early night = hospital.  Rain check = cancel next stop.<br/>No contact 5 min: go to the rally point. Phones down: wait 15 min at the rally point, then back to the Willard.",
-  "red_spots": [
-   "Leg 1: Willard curb (F St side), 9th St tunnel (alternate), Wharf drop-off (InterContinental).",
-   "Leg 2: Anthem pick-up (InterContinental), K St into the Harbour (M St to 31st St).",
-   "Leg 3: Harbour exit (stage facing out; Ritz-Carlton), Willard frontage (F St side)."
+  "intro_short": "Drive it on a Friday evening between 5:30 and 10:30 PM, like the move: about 1.5 hours for every route and the hospital runs. Log it on the next page.",
+  "comms_checks": [
+   "Code words agreed: Scenic = alternate route. Coffee stop = safe haven. Early night = hospital. Rain check = cancel the next stop.",
+   "Comms down briefed: no contact for 5 minutes, go to the stop's rally point. Phones down, wait there 15 minutes, then back to the Willard.",
+   "Site advance gives the driver a 10-minute call before each departure, and any change of exit door.",
+   "Packet sent only to people on the move, by an encrypted app."
   ]
  },
  "forms": {
