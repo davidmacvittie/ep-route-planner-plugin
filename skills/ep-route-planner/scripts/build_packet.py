@@ -201,7 +201,7 @@ class MiniStrip(Flowable):
 
 
 def leg_routes(lg):
-    """(label, key) for each route of a leg: primary and alternate, plus alternate 2 when the plan asks for 3 routes."""
+    """(label, key) for each route of a leg: primary, alternate and alternate 2 (3 routes is the default; a plan asked for 2 has no alternate 2)."""
     r = [("Primary", "primary"), ("Alternate", "alternate")]
     if lg.get("strip", {}).get("alternate2"): r.append(("Alternate 2", "alternate2"))
     return r
@@ -438,7 +438,7 @@ def build(D, out_path):
                ("Departure time", "When the principal leaves the start.")]
     inp_opt = [("Principal code name", "ATLAS (never the real name)."),
                ("Number of cars", "1."),
-               ("Routes per leg", "2. Or 3, adding a second alternate."),
+               ("Routes per leg", "3. Or 2 if you ask."),
                ("Greeter at the event site", "None."),
                ("Time at each stop", "1 hour."),
                ("Risk level", "Medium. For reviewers only.")]
@@ -491,7 +491,7 @@ def build(D, out_path):
     # 3. Key terms
     terms = D.get("terms") or [
         ("Leg", "One drive from one place to the next."),
-        ("Primary / alternate", "The planned route, and a second one on different roads."),
+        ("Primary / alternates", "The planned route, and two more on different roads."),
         ("Predictable spot", "A place we must pass at a known time, like a curb."),
         ("Choke point", "No way out, like a tunnel or one-way block."),
         ("If blocked, go", "Where to go if a spot is blocked. Decided now."),
@@ -532,7 +532,7 @@ def build(D, out_path):
                  ("Date", inp.get("date", meta["date_label"])),
                  ("Departs", inp.get("start_time", "")),
                  ("Cars", str(inp.get("cars") or "1 (default)")),
-                 ("Routes per leg", str(inp.get("routes") or "2 (default)")),
+                 ("Routes per leg", str(inp.get("routes") or "3 (default)")),
                  ("Greeter at the event site", inp.get("greeter") or "None given"),
                  ("Risk level", "%s. For reviewers; the plan is the same at any level." % risk)]
         gw = (IW - 18) / 2

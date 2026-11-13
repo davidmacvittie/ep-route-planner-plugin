@@ -1,7 +1,7 @@
 {
   "name": "ep-route-planner",
-  "version": "1.1.4",
-  "description": "Builds route advances for executive protection drive teams: visual leg maps, primary and alternate routes with strip maps and QR codes that load each route into Google Maps, predictable spots with an if-blocked plan, hospital runs, rally points, an events check and a recon checklist. Works best with the Mapbox, TomTom and AccuWeather connectors.",
+  "version": "1.2.0",
+  "description": "Builds route advances for executive protection drive teams: visual leg maps, a primary and two alternate routes per leg with strip maps and QR codes that load each route into Google Maps, predictable spots with an if-blocked plan, hospital runs, rally points, an events check and a recon checklist. Works best with the Mapbox, TomTom and AccuWeather connectors.",
   "author": {
     "name": "David MacVittie"
   },

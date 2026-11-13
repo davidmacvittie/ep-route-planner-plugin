@@ -1,6 +1,6 @@
 ---
 name: ep-route-planner
-description: Builds a route advance for a 1-3 person protection drive team from a list of addresses and a date and time - primary and alternate routes with strip maps, predictable spots with an "if blocked, go" for each, hospital runs turn by turn, a rally point per stop, a citywide events check, green or amber verdicts (red is left to the team), an overhead view of each stop with its drop-off, backup and rally points on the leg map page, labeled QR codes (each route loaded into Google Maps, plus a pin and a Street View for each place), timing, and a one-page checklist for recon, day-of and comms. Use when someone gives addresses for a client move and asks for a route advance, route card, drive plan, or advance package for the drive team. Works best with the Mapbox, TomTom and AccuWeather connectors.
+description: Builds a route advance for a 1-3 person protection drive team from a list of addresses and a date and time - a primary and two alternate routes per leg with strip maps, predictable spots with an "if blocked, go" for each, hospital runs turn by turn, a rally point per stop, a citywide events check, green or amber verdicts (red is left to the team), an overhead view of each stop with its drop-off, backup and rally points on the leg map page, labeled QR codes (each route loaded into Google Maps, plus a pin and a Street View for each place), timing, and a one-page checklist for recon, day-of and comms. Use when someone gives addresses for a client move and asks for a route advance, route card, drive plan, or advance package for the drive team. Works best with the Mapbox, TomTom and AccuWeather connectors.
 ---
 
 # EP route advance (drive team packet)
@@ -41,7 +41,7 @@ Then ask once, in one short message, only for what you can't assume. Use these d
 |---|---|
 | Principal code name | ATLAS (never the real name) |
 | Number of cars | 1, agent driving. If the user names a lead or follow car, add it as above. |
-| Routes per leg | 2: primary and alternate. If the user asks for 3, add a second alternate (section 3). |
+| Routes per leg | 3: primary, alternate and alternate 2 (section 3). If the user asks for 2, leave out alternate 2. |
 | Greeter at the event site | None (the agent walks the principal in) |
 | Time at each stop | 1 hour per stop |
 | Risk level | Medium. Shown on the cover for reviewers only; nothing in the plan changes with it. |
@@ -74,15 +74,15 @@ For each leg, at the real departure time:
 
 - **Primary:** the fastest reasonable route on main roads with exits.
 - **Alternate:** the option that shares the least road with the primary. Ask the mapping tool for alternatives; if one tool gives none, try the other. Say how much road the two share.
-- **Alternate 2 (only when the user asks for 3 routes):** a third route that shares as little road as possible with both the primary and the alternate. Ask both tools for alternatives; if neither gives a third, route through a waypoint on a different avenue or street. Say how much road it shares with the other two.
+- **Alternate 2 (by default; leave it out only when the user asks for 2 routes):** a third route that shares as little road as possible with both the primary and the alternate. Ask both tools for alternatives; if neither gives a third, route through a waypoint on a different avenue or street. Say how much road it shares with the other two.
 - **Single approach:** if every option uses the same final approach to a stop, say so plainly and suggest a manual option for the recon drive to test.
 - Give distance, drive time from each tool you used, and drive time with buffer (10% low, 15% medium, 20% high risk).
-- Draw one map per leg: primary in blue, alternate in amber, alternate 2 (if asked for) in teal #178A86 (with 3 routes, always draw a fresh map that shows all three lines and set `map_routes` to 3; draw the teal line before the blue one so the primary stays on top where they share road), predictable spots as numbered red pins, and the trauma center if it fits.
+- Draw one map per leg: primary in blue, alternate in amber, alternate 2 in teal #178A86 (with 3 routes, always draw a fresh map that shows all three lines and set `map_routes` to 3; draw the teal line before the blue one so the primary stays on top where they share road), predictable spots as numbered red pins, and the trauma center if it fits.
 - Get turn-by-turn steps for every route from the mapping tool (Mapbox Directions with steps on, full geometry). These feed the strip maps in section 3a.
 
 ## 3a. Linear strip map and step table (every route, every leg)
 
-The driver reads this page, not the map. Make one landscape page for the primary of each leg, and one for the alternate where it differs from the primary.
+The driver reads this page, not the map. Make one landscape page for the primary of each leg, one for the alternate, and one for alternate 2.
 
 **Strip map**, drawn as one straight line from START to ARRIVE, not to scale:
 
@@ -187,8 +187,8 @@ Produce the packet in this fixed order. If you can run code, build the PDF with 
 
 1. **How to read this plan (page 1, before the cover):** one page, plain words, in five separate areas with clear space between them. One line above them: the packet is a quick outline of public information; it does not replace the advance drive, and the checklist's page number.
    - **Information needed to build this plan:** required: locations (start, stops in order, end), date, departure time. Optional with defaults: principal code name, number of cars, greeter at the event site, time at each stop, risk level (Medium; for reviewers only).
-   - **Symbols:** blue line primary, amber line alternate (teal for a second alternate), red number predictable spot, CP1 to CP3 checkpoint calls, numbered circle a stop, and the icons for trauma center, police, fire, secure lobby, watch-out and event. D, B and R on stop photos.
-   - **Key terms**, one short line each: leg, primary and alternate, predictable spot, choke point, if blocked go, backup point, rally point, safe haven, recon to confirm, hand-off.
+   - **Symbols:** blue line primary, amber line alternate (teal for alternate 2), red number predictable spot, CP1 to CP3 checkpoint calls, numbered circle a stop, and the icons for trauma center, police, fire, secure lobby, watch-out and event. D, B and R on stop photos.
+   - **Key terms**, one short line each: leg, primary and alternates, predictable spot, choke point, if blocked go, backup point, rally point, safe haven, recon to confirm, hand-off.
    - **How to read a strip map:** a small worked example. Left to right; above the line is a left turn, below is a right turn, a tick is a straight-on event, numbers are miles between turns, not to scale.
    - **Verdicts:** green = go as planned; amber = go, with the notes; red = the team's call only, after the advance drive. The plan never sets red. The worst verdict sets the overall one.
 2. **Cover:** two separate areas. **General info** at the top: code name, date, departure time, cars, greeter, risk level, and the stops in order. Below it, **Time and verdicts**: the overall verdict with its reason in one line, then the timeline with as little on it as possible. Each stop row is its time, its name and one key fact ("Carnegie Hall: 8 PM concert starts"). Each drive row is only the drive time ("3 min, 8 with buffer"). Road names and other notes go on the leg and strip pages, not the cover. Beside it, **Weather and watch-outs**: the weather card with two short lines, and up to four watch-outs of one line each. No color key on the cover; page 1 has it.
@@ -218,7 +218,7 @@ This skill ships a builder that makes the packet in the fixed layout above: `scr
 
 **Check the route codes.** The builder prints each route code ("ROUTE CODE leg 2 Alternate: ..."). For each route, run the Mapbox directions tool through the same origin, points and destination and compare its turns with the strip page. Where it takes a different road, set that route's `waypoints` in the JSON by hand ([lon, lat] points, at most 3, each just past a turn it skipped, on the new street), and build again. In the LA and New York tests, 5 of 7 routes matched on the first try and the other 2 skipped a one-block jog. **Aim every Street View code.** For each leg, geocode the venue it drops off at (its building or main entrance, not the routing point) and give the leg `dropoff_view: {"look_at": [lon, lat]}`. The builder then puts the Street View point on the primary route's own line, so on the road beside the drop-off, set back along the last straight stretch (40% of it, 12 to 30 m) so it sits mid-block and not in the intersection the route ends at, and aims the heading from that point at the building. Without `look_at` it looks square at the curb the arrive line names, which can point at the wrong side of a corner. Decode the trip map page's Street View codes and check each point is on the drop-off street and the heading faces the building. `pt` and `heading` in `dropoff_view` override either part by hand.
 
-Page numbers are worked out from the number of legs and stops: page 1 how to read, 2 cover, 3 trip map, then 1 page per leg map plus 1 strip page per route (3 pages per leg with 2 routes, 4 with 3), medical, checklist, recon log and after-move note. The DC sample is 16 pages: 3 legs with 2 routes each.
+Page numbers are worked out from the number of legs and stops: page 1 how to read, 2 cover, 3 trip map, then 1 page per leg map plus 1 strip page per route (4 pages per leg with 3 routes, the default; 3 with 2), medical, checklist, recon log and after-move note. A three-leg move is 19 pages with 3 routes; the DC sample is 16 pages because it was built with 2.
 
 If code can't run, write the same sections in text in the same order, and give the maps in the chat.
 
